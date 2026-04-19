@@ -21,6 +21,10 @@ Implementacion del proyecto de Mixture of Experts (MoE) para vision medica multi
 Instalacion base:
 
 ```bash
+git clone https://github.com/SEBASBELMOS/moe_medical_vision.git
+```
+
+```bash
 pip install -r requirements.txt
 ```
 
