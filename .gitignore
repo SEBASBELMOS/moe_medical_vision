@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Model artifacts
+checkpoints/
+embeddings/
+
+# Local data
+data/
+nih_manuel/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

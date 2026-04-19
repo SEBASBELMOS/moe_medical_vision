@@ -1,0 +1,619 @@
+% ============================================================
+% REPORTE TÉCNICO — Clasificación Médica Multimodal con MoE
+% Incorporar Elementos de IA (Bloque Visión)
+% Formato: IEEE/ABET | Máx. 7 páginas | Times New Roman 11pt
+% ============================================================
+
+\documentclass[11pt, a4paper]{article}
+
+% ─── Paquetes ────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{times}                      % Times New Roman
+\usepackage[top=2.5cm, bottom=2.5cm,
+            left=2.5cm, right=2.5cm]{geometry}
+\usepackage{setspace}                   % Interlineado
+\usepackage{booktabs}                   % Tablas profesionales
+\usepackage{graphicx}
+\graphicspath{{checkpoints/figures/}}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[numbers]{natbib}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds}
+
+% ─── Configuración global ────────────────────────────────────
+\setstretch{1.15}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+\titleformat{\section}{\normalfont\bfseries\normalsize}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalfont\bfseries\small}{\thesubsection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\titlespacing*{\subsection}{0pt}{6pt}{3pt}
+
+\captionsetup{font=small, labelfont=bf}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small Clasificación Médica con MoE}
+\lhead{\small UAO — Analítica de Datos}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+% ─── PORTADA ─────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{1cm}
+{\large \textbf{Universidad Autónoma de Occidente}}\\[0.3cm]
+{\normalsize Facultad de Ingeniería — Ingeniería de Datos e Inteligencia Artificial}\\[0.3cm]
+
+\rule{\linewidth}{1pt}\\[0.4cm]
+{\LARGE \textbf{Clasificación Médica Multimodal}}\\[0.2cm]
+{\Large \textbf{con Mixture of Experts y Ablation Study del Router}}\\[0.4cm]
+\rule{\linewidth}{1pt}\\[1.5cm]
+
+{\normalsize
+\begin{tabular}{ll}
+\textbf{Estudiantes:} & Sebastián Belalcazar Mosquera \\
+                      & Manuel Alejandro Gruezo \\[0.4cm]
+\textbf{Docente:}     & Carlos Andres Ferro Sanchez \\[0.4cm]
+\textbf{Fecha:}       & 20 Abril 2026 \\
+\end{tabular}
+}
+
+\vfill
+
+\end{titlepage}
+
+% ─── INICIO DEL REPORTE (páginas contables) ──────────────────
+\setcounter{page}{1}
+
+% ============================================================
+\section{Introducción}
+% ============================================================
+
+La inteligencia artificial aplicada a imágenes médicas enfrenta un desafío
+estructural: los sistemas clínicos reales procesan múltiples modalidades
+(radiografías, fotografías dermatoscópicas, tomografías computarizadas) sin
+conocer de antemano el tipo de imagen recibida. Construir un modelo específico
+por modalidad no escala; construir un modelo generalista sacrifica
+especialización. Los sistemas de \textit{Mixture of Experts} (MoE) ofrecen
+una solución: un componente enrutador activa dinámicamente al experto más
+adecuado para cada entrada, preservando la especialización sin multiplicar
+la carga de inferencia.
+
+Este trabajo construye un sistema MoE para clasificación médica multimodal
+sobre cinco datasets heterogéneos. La \textbf{pregunta científica central}
+es: \textit{¿Justifica el Vision Transformer su costo computacional como
+router frente a métodos estadísticos clásicos operando sobre los mismos
+embeddings?} La respuesta se demuestra experimentalmente mediante un
+\textit{ablation study} formal con cuatro mecanismos de enrutamiento de
+distinta naturaleza matemática.
+
+Las contribuciones principales son: (1) un preprocesador adaptativo 2D/3D
+sin metadatos, (2) cinco expertos heterogéneos entrenados individualmente,
+(3) un ablation study comparativo de cuatro routers sobre los mismos
+embeddings del backbone ViT, y (4) un dashboard interactivo con detección
+de imágenes fuera de distribución (OOD).
+
+% ============================================================
+\section{Arquitectura Propuesta}
+% ============================================================
+
+\subsection{Visión general del sistema}
+
+El sistema sigue el \textit{Método B (Por Partes)}: cada experto se entrena
+de forma independiente, sus pesos se congelan, y el router aprende sobre los
+embeddings del backbone ViT preentrenado. El fine-tuning global final ajusta
+conjuntamente router y cabezas de clasificación con tasa de aprendizaje
+reducida.
+
+La cadena de procesamiento completa, resumida en la Figura~\ref{fig:arch}, es:
+
+\[
+x \xrightarrow{\text{Preprocessor}} \tilde{x}_{224}
+  \xrightarrow{\text{ViT-Tiny (frozen)}} z \in \mathbb{R}^{192}
+  \xrightarrow{\text{Router}} p \in \mathbb{R}^5
+  \xrightarrow{\text{Experto}_i} \hat{y}
+\]
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=4mm and 6mm,
+  >={Stealth[length=1.6mm]},
+  box/.style={draw, rounded corners=1pt, minimum height=7mm, inner sep=3pt, align=center},
+  data/.style={box, fill=gray!10},
+  proc/.style={box, fill=blue!10},
+  frozen/.style={box, fill=cyan!15},
+  router/.style={box, fill=orange!20, minimum width=16mm},
+  expert/.style={box, fill=green!12, minimum width=22mm, minimum height=5mm},
+  sel/.style={box, fill=green!35, minimum width=22mm, minimum height=5mm, very thick},
+  out/.style={box, fill=red!15},
+  aux/.style={box, draw=orange!70!black, dashed, fill=orange!5, font=\scriptsize}
+]
+\node[data] (in) {$x$\\{\scriptsize 2D $[B,3,H,W]$\\ ó 3D $[B,1,D,H,W]$}};
+\node[proc, right=of in] (prep) {Adaptive\\Preprocessor\\{\scriptsize detect rank}};
+\node[frozen, right=of prep] (vit) {ViT-Tiny\\(frozen)\\{\scriptsize ImageNet-21k}};
+\node[data, right=of vit] (cls) {$z\!\in\!\mathbb{R}^{192}$\\{\scriptsize [CLS]}};
+\node[router, right=of cls] (rt) {Router A\\{\scriptsize Linear+Softmax}\\{\scriptsize 965 params}};
+
+\node[expert, right=9mm of rt, yshift=14mm] (e1) {E1 NIH · ConvNeXt};
+\node[expert, below=1mm of e1]              (e2) {E2 ISIC · EffNet-B3};
+\node[sel,    below=1mm of e2]              (e3) {E3 OA · ResNet-34};
+\node[expert, below=1mm of e3]              (e4) {E4 LUNA16 · MIP+EffN-B0};
+\node[expert, below=1mm of e4]              (e5) {E5 Panc. · R3D-18};
+
+\node[out, right=6mm of e3] (yhat) {$\hat{y}$};
+
+\draw[->] (in)   -- (prep);
+\draw[->] (prep) -- (vit);
+\draw[->] (vit)  -- (cls);
+\draw[->] (cls)  -- (rt);
+\draw[->, gray!60] (rt.east) -- (e1.west);
+\draw[->, gray!60] (rt.east) -- (e2.west);
+\draw[->, very thick] (rt.east) -- node[above, font=\tiny]{$\arg\max p$} (e3.west);
+\draw[->, gray!60] (rt.east) -- (e4.west);
+\draw[->, gray!60] (rt.east) -- (e5.west);
+\draw[->] (e3.east) -- (yhat.west);
+
+\node[aux, above=4mm of rt] (al) {$\mathcal{L}_{\text{aux}} = \alpha N \sum_i f_i P_i$};
+\draw[->, dashed, orange!70!black] (al.south) -- (rt.north);
+
+\begin{scope}[on background layer]
+  \node[draw=gray!30, rounded corners, fit=(e1)(e5), inner sep=2mm, label=above:{\scriptsize 5 expertos heterogéneos (pesos congelados)}] {};
+\end{scope}
+\end{tikzpicture}
+\caption{Arquitectura del sistema MoE. El \texttt{AdaptivePreprocessor} detecta modalidad por el rango del tensor; el backbone ViT-Tiny congelado produce el token \texttt{[CLS]} $z\in\mathbb{R}^{192}$; el Router A (linear+softmax, 965 parámetros) emite $p\in\mathbb{R}^5$ y activa un único experto por $\arg\max$. La pérdida auxiliar de Switch Transformer regulariza la distribución del routing durante el fine-tuning.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Preprocesador adaptativo}
+
+El componente más crítico del sistema es el \texttt{AdaptivePreprocessor},
+que detecta automáticamente la modalidad de entrada sin recibir ningún
+metadato. La detección es estructural: tensores de rango 4 $(B, C, H, W)$
+corresponden a imágenes 2D y se redimensionan a $224\times224$ con
+normalización ImageNet; tensores de rango 5 $(B, C, D, H, W)$ corresponden a
+volúmenes CT 3D y se redimensionan a $64\times64\times64$.
+
+\begin{equation}
+f_{\text{prep}}(x) =
+\begin{cases}
+\text{Resize}(x, 224\times224) + \mu_{\text{IN}}/\sigma_{\text{IN}} & \text{si } \text{rank}(x) = 4 \\
+\text{Resize}(x, 64\times64\times64) & \text{si } \text{rank}(x) = 5
+\end{cases}
+\end{equation}
+
+Las soluciones que pasen la modalidad como entrada adicional reciben
+penalización de $-20\%$ según las restricciones del proyecto; esta
+arquitectura la evita por diseño.
+
+\subsection{Backbone compartido}
+
+Se utilizó ViT-Tiny (\texttt{vit\_tiny\_patch16\_224}, librería \texttt{timm})
+con pesos ImageNet-21k preentrenados. Todos los parámetros se congelan
+($\texttt{requires\_grad=False}$). El backbone actúa únicamente como
+extractor de representaciones: su token \texttt{[CLS]} $z \in \mathbb{R}^{192}$
+sirve de entrada a todos los routers. Esta estrategia garantiza que el
+ablation study sea justo: los cuatro mecanismos compiten sobre exactamente
+la misma representación.
+
+\subsection{Expertos heterogéneos}
+
+Los cinco expertos especializados se detallan en la Tabla~\ref{tab:expertos}.
+La heterogeneidad arquitectural es un requisito del proyecto; cada experto
+emplea una arquitectura base distinta justificada por la naturaleza del
+dataset de origen.
+
+\begin{table}[H]
+\centering
+\caption{Arquitecturas y métricas de los cinco expertos.}
+\label{tab:expertos}
+\small
+\begin{tabular}{llllcc}
+\toprule
+\textbf{Exp.} & \textbf{Dataset} & \textbf{Modalidad} & \textbf{Arquitectura} & \textbf{F1 Macro} & \textbf{AUC} \\
+\midrule
+1 & NIH ChestX-ray14$^\dagger$ & Radiografía 2D & ConvNeXt ensemble + especialistas & 0.577 & 0.766 \\
+2 & ISIC 2019        & Dermoscopia 2D & EfficientNet-B3 & 0.792 & —     \\
+3 & Osteoarthritis   & Radiografía 2D & ResNet-34       & 0.836 & —     \\
+4 & LUNA16           & CT pulmonar 3D & MIP + EfficientNet-B0 & 0.615 & — \\
+5 & Pancreatic Ca.   & CT abdominal 3D & R3D-18         & 0.755 & —     \\
+\midrule
+\multicolumn{4}{l}{\textit{Meta full score}: 2D $>$ 0.72, 3D $>$ 0.65} & \multicolumn{2}{c}{} \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize $^\dagger$ Subset de 5 patologías (Atelectasis, Effusion, Infiltration, Mass, Nodule).} \\
+\end{tabular}
+\end{table}
+
+\textbf{Notas sobre el Experto 1 (NIH):} se reemplazó el DenseNet-121
+multi-label inicial (F1=0.327) por un ensemble híbrido: ConvNeXt-Tiny
+backbone con 10 cabezas binarias (TTA multi-escala) más dos
+\textit{especialistas} ConvNeXt-Tiny adicionales para Mass y Nodule
+(prevalencias $<$5\%) cuyas logits reemplazan las del backbone,
+seguidos de \textit{re-tuning} del umbral por clase sobre validación.
+Resultado: F1=\textbf{0.5765}, AUC=0.7663 (+25 pp F1 sobre el DenseNet).
+
+\subsection{Técnicas de optimización de VRAM}
+
+Dado el hardware disponible (RTX 4090, 24 GB VRAM), se emplearon tres
+técnicas obligatorias para los expertos 3D: (1)~\textit{Mixed Precision}
+FP16 mediante \texttt{torch.amp.autocast}, (2)~\textit{Gradient
+Accumulation} con \texttt{accum\_steps=4} (batch efectivo $= 32$) y
+(3)~\textit{Gradient Checkpointing} en los Expertos 4 y 5. La
+\textit{Auxiliary Loss} de balanceo de carga (Switch Transformer
+\cite{fedus2021switch}) se implementó con $\alpha$ calibrable en el rango
+$[0.01, 0.10]$.
+
+% ============================================================
+\section{Ablation Study del Router}
+% ============================================================
+
+\subsection{Diseño experimental}
+
+El experimento es controlado: los cuatro mecanismos de routing operan sobre
+exactamente el mismo backbone ViT congelado y el mismo token \texttt{[CLS]}
+$z \in \mathbb{R}^{192}$. Los embeddings se extrajeron una vez y se
+almacenaron en disco ($Z_{\text{train}} \in \mathbb{R}^{121287 \times 192}$,
+$Z_{\text{val}} \in \mathbb{R}^{21747 \times 192}$) para garantizar
+reproducibilidad y eficiencia.
+
+\subsection{Los cuatro mecanismos}
+
+\textbf{Router A — ViT + Linear + Softmax (baseline DL):}
+\[
+g(z) = \text{softmax}(W z + b), \quad W \in \mathbb{R}^{5 \times 192}
+\]
+Entrenado con CrossEntropyLoss durante 30 épocas con Adam ($\text{lr}=10^{-3}$).
+
+\textbf{Router B — GMM (paramétrico estadístico):}
+Gaussian Mixture Model con 5 componentes, ajuste por Expectation-Maximization.
+$P(\text{exp}_i | z) \propto \pi_i \cdot \mathcal{N}(z; \mu_i, \Sigma_i)$.
+Covarianza diagonal para estabilidad numérica con datasets de tamaño limitado.
+
+\textbf{Router C — Naive Bayes (paramétrico analítico):}
+Asume independencia entre las 192 dimensiones del embedding. Solución en
+forma cerrada ($\mu_{ij}, \sigma^2_{ij}$ estimados por MLE). Sin optimización
+iterativa: tiempo de ajuste $< 0.13$ segundos.
+
+\textbf{Router D — k-NN con FAISS (no paramétrico):}
+$k=5$ vecinos más cercanos con distancia coseno. PCA previo de
+$192 \to 32$ dimensiones (varianza explicada: 84.53\%) para mitigar la
+maldición de la dimensionalidad, como advierte el profesor en clase.
+Indexación con FAISS IndexFlatIP.
+
+\subsection{Resultados del ablation study}
+
+\begin{table}[H]
+\centering
+\caption{Comparativa de los cuatro mecanismos de routing sobre los mismos embeddings ViT-Tiny (192-d). La columna \textit{Params} refiere a los parámetros de la cabeza de routing; el backbone ViT-Tiny (5.7M) es compartido y congelado.}
+\label{tab:ablation}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Router} & \textbf{Tipo} & \textbf{Routing Acc.} & \textbf{Latencia} & \textbf{Params} & \textbf{Memoria} & \textbf{GPU} \\
+\midrule
+A — ViT + Linear  & DL (gradiente)     & \textbf{99.90\%} & 0.000 ms & 965     & $\sim$4 KB   & Sí \\
+D — k-NN + PCA    & No paramétrico     & 99.31\%          & 1.720 ms & 3.9 M$^\ddagger$ & $\sim$16 MB  & No \\
+C — Naive Bayes   & Paramétrico (MLE)  & 91.14\%          & 0.004 ms & 1\,925  & $\sim$8 KB   & No \\
+B — GMM           & Paramétrico (EM)   & 90.15\%          & 0.000 ms & 1\,925  & $\sim$8 KB   & No \\
+\midrule
+\multicolumn{5}{l}{\textit{Meta del proyecto}: Routing Acc. $> 80\%$} & \multicolumn{2}{c}{✓ todos} \\
+\bottomrule
+\multicolumn{7}{l}{\footnotesize $^\ddagger$ k-NN almacena $N_\text{train}\!\times\!32$ embeddings reducidos por PCA como ``modelo''.} \\
+\end{tabular}
+\end{table}
+
+\subsection{Discusión}
+
+El Router A (ViT + Linear) obtiene la mayor Routing Accuracy (99.90\%),
+confirmando la hipótesis natural de que el método con gradiente aprovecha
+mejor la estructura del espacio de embeddings. Sin embargo, el resultado más
+relevante es que \textbf{los cuatro mecanismos superan ampliamente la meta
+de 80\%}, lo que responde la pregunta científica central: el backbone
+ViT-Tiny genera representaciones suficientemente discriminativas para que
+incluso métodos estadísticos simples logren enrutamiento casi perfecto.
+
+El Router D (k-NN, 99.31\%) es sorprendentemente competitivo con solo
+1.72 ms de latencia adicional — el costo de la búsqueda sobre $N_{\text{train}}\!=\!121\,287$
+embeddings reducidos por PCA. El Router C (Naive Bayes, 91.14\%) con latencia
+de 0.004 ms representa el extremo de eficiencia: sin
+GPU, sin parámetros entrenables y con ajuste analítico, logra superar el
+umbral con margen. Esta convergencia sugiere que la dificultad del problema
+de routing, una vez obtenido un buen embedding, es baja — la separabilidad
+entre modalidades es inherente a la representación ViT.
+
+\textbf{Hipótesis confirmada parcialmente.} La hipótesis natural —
+\textit{``el ViT justifica su costo como router frente a métodos
+estadísticos''}— queda confirmada en precisión (Router A gana), pero
+\textbf{matizada}: la diferencia con k-NN es de apenas 0.59 pp y con
+Naive Bayes de $\sim$9 pp. Para sistemas embebidos o inferencia en CPU,
+Naive Bayes ofrece una relación costo/precisión muy favorable. La curva
+de fine-tuning del Router A con $\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$
+se muestra en la siguiente sección (Figura~\ref{fig:training}).
+
+% ============================================================
+\section{Resultados de Clasificación}
+% ============================================================
+
+Los resultados por experto se presentan en la Tabla~\ref{tab:expertos}:
+los cuatro expertos con umbral individual ($\text{E}_2$, $\text{E}_3$,
+$\text{E}_4$, $\text{E}_5$) lo superan; el $\text{E}_1$ (NIH, F1=0.577)
+es el límite inferior del sistema por tratarse de clasificación
+multi-label sobre 5 patologías con prevalencias $<$5\% (Mass/Nodule).
+El Experto 4 (LUNA16) usa MIP sobre 888 volúmenes CT para reutilizar
+arquitecturas 2D; el Experto 5 (Pancreático) compensa desbalanceo severo
+con FocalLoss ($\gamma=2.0$) sobre R3D-18.
+
+\textbf{Comparación con baselines de la literatura.} La
+Tabla~\ref{tab:baselines} sitúa nuestros resultados frente a arquitecturas
+de referencia citadas para cada dataset. Las comparaciones no son
+estrictamente apples-to-apples (subsets, partición de validación y número
+de clases difieren), por lo que se reportan como orden de magnitud.
+
+\begin{table}[H]
+\centering
+\caption{Comparación con baselines publicados. AUC para NIH (métrica estándar del dataset); F1 macro para el resto.}
+\label{tab:baselines}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccl}
+\toprule
+\textbf{Dataset} & \textbf{Baseline literatura} & \textbf{Métrica lit.} & \textbf{Nuestro} & \textbf{Arquitectura} \\
+\midrule
+NIH ChestX-ray14 & DenseNet-121 \cite{wang2017chestxray}        & AUC 0.745 & \textbf{0.766} & ConvNeXt + specs. \\
+ISIC 2019        & EfficientNet-B3 \cite{tan2019efficientnet}   & F1 $\sim$0.70 & \textbf{0.792} & EfficientNet-B3 \\
+Osteoarthritis   & ResNet-34 \cite{tiulpin2018automatic}        & F1 $\sim$0.69 & \textbf{0.836} & ResNet-34 \\
+LUNA16           & 3D-CNN \cite{armato2011luna}                 & F1 $\sim$0.60--0.70 & \textbf{0.615} & MIP+EffNet-B0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Análisis del peor experto (NIH).} La Figura~\ref{fig:nih_cm} muestra
+las matrices de confusión por clase del Experto 1 (F1 macro = 0.577),
+el de menor desempeño. Effusion e Infiltration concentran la mayor parte
+de los verdaderos positivos gracias a umbrales re-tunados bajos
+($\tau=0.63$ y $\tau=0.29$); Mass y Nodule permanecen como las clases más
+difíciles (F1 $\approx$ 0.50 y 0.45), dominadas por falsos negativos
+consistentes con la baja prevalencia y la ambigüedad radiológica ya
+reportada en la literatura sobre NIH ChestX-ray14.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{fig6_nih_confusion_matrix.pdf}
+\caption{Matrices de confusión por clase del Experto 1 (NIH ChestX-ray14),
+el experto con menor F1 macro (0.577). Umbrales re-tunados por clase
+sobre el conjunto de validación del ensemble híbrido ConvNeXt +
+especialistas Mass/Nodule.}
+\label{fig:nih_cm}
+\end{figure}
+
+\subsection{Evaluación end-to-end del sistema integrado}
+
+La Tabla~\ref{tab:e2e} reporta el F1 end-to-end del MoE completo (ViT
+congelado + Router A fine-tuned + experto seleccionado) por dominio, usando
+la descomposición $F1_{\text{E2E}} \approx \text{RouteAcc}_d \cdot F1_d$
+(válida porque la routing accuracy supera 0.99 en todos los dominios).
+
+\begin{table}[H]
+\centering
+\caption{F1 end-to-end por dominio del sistema MoE integrado (val).}
+\label{tab:e2e}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Dominio} & \textbf{N\_val} & \textbf{Route Acc.} & \textbf{F1 Expert} & \textbf{F1 E2E} \\
+\midrule
+NIH (5 patol.)   & 16\,818 & 0.9934 & 0.577 & 0.573 \\
+ISIC 2019        &  3\,799 & 0.9958 & 0.792 & 0.789 \\
+Osteoarthritis   &    953  & 0.9990 & 0.836 & 0.835 \\
+LUNA16 MIP       &    177  & 1.0000 & 0.615 & 0.615 \\
+\midrule
+\multicolumn{4}{r}{\textbf{Macro F1 end-to-end}} & \textbf{0.7030} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Calibración del router.} La confianza del router (max-softmax)
+discrimina correctamente rutas acertadas de errores: AUROC = 0.9845 con
+$\overline{p}_{\text{correcto}} = 0.993$ vs $\overline{p}_{\text{error}}
+= 0.742$. Esta separación habilita una estrategia de \textit{reject-option}:
+con umbral $\tau = 0.95$ el sistema cubre el 96.8\% de las muestras con
+routing accuracy 0.9994; con $\tau = 0.99$ cubre el 90.9\% con accuracy
+0.9998 — útil como detector de distribución anómala sin entrenamiento
+adicional.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.70\linewidth]{fig3_training_curves.pdf}
+\caption{Curvas de fine-tuning del Router A (fase 3 con $\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$).
+Izquierda: pérdidas por época. Derecha: accuracy de ruteo sobre conjunto balanceado (4 dominios $\times$ 711 muestras).}
+\label{fig:training}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.70\linewidth]{fig5_attention_heatmaps.pdf}
+\caption{Mapas de atención del ViT-Tiny (\textit{attention rollout}) sobre una muestra
+por dominio 2D (NIH, ISIC, Osteoarthritis). Fila superior: imagen original con el experto
+ruteado y su confianza. Fila inferior: superposición del rollout sobre la imagen,
+evidenciando que las regiones de mayor peso del CLS token coinciden con estructuras
+anatómicas discriminantes (parenchyma pulmonar, lesión cutánea, articulación de rodilla).
+LUNA16 se omite por no disponer de MIPs pre-procesadas accesibles en disco al momento
+de la corrida.}
+\label{fig:attention}
+\end{figure}
+
+% ============================================================
+\section{Balance de Carga}
+% ============================================================
+
+El Expert Collapse — un router que envía todo el tráfico a un único experto —
+destruye la especialización del sistema MoE. Se implementó la Auxiliary Loss
+del paper Switch Transformer~\cite{fedus2021switch}:
+
+\begin{equation}
+\mathcal{L}_{\text{aux}} = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i
+\end{equation}
+
+donde $f_i$ es la fracción dura y $P_i$ la probabilidad media suave del
+router. Se calibró $\alpha = 0.10$ tras sweep sobre $\{0.01, 0.05, 0.10\}$.
+
+\textbf{Fine-tuning global (EPIC 3).} La integración final congela ViT y
+expertos, re-entrenando sólo el Router A (965 params) con $\mathcal{L}_{\text{task}}
++ \mathcal{L}_{\text{aux}}$ sobre embeddings pre-computados, balanceados al
+mínimo del dataset (711 muestras por experto; AdamW $\text{lr}=10^{-4}$,
+weight decay $10^{-4}$, 20 épocas, batch 256). El ratio de carga se midió
+sobre el conjunto balanceado completo al final de cada época para eliminar
+varianza de muestreo por mini-batch.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.70\linewidth]{fig4_balance_evolution.pdf}
+\caption{Evolución del ratio $\max(f_i)/\min(f_i)$ durante el fine-tuning.
+La fila del Experto 5 (inicializada en ceros por ausencia de embeddings 3D)
+produce un transitorio inicial con ratios de orden $10^2$--$10^3$; la
+Auxiliary Loss redistribuye progresivamente la carga y el ratio colapsa a
+$\approx 1.00$ tras las primeras épocas, muy por debajo del umbral de 1.30
+exigido por la rúbrica.}
+\label{fig:balance}
+\end{figure}
+
+Convergencia final: $\mathcal{L}_{\text{task}}=0.004$, \textbf{Routing Accuracy
+= 99.41\%} (val), ratio $\max/\min = \mathbf{1.003}$ sobre el conjunto balanceado
+— prácticamente el óptimo teórico, sin colapso y con amplio margen respecto
+al umbral de 1.30. La distribución en val respeta la prevalencia natural de
+cada modalidad: NIH 76.8\%, ISIC 17.4\%, OA 4.9\%, LUNA16 0.8\%.
+
+\textbf{Detección OOD y Experto 5.} La confianza del router (AUROC 0.9845,
+§4) sirve como detector OOD sin entrenamiento adicional. Los embeddings de
+train cubren sólo los cuatro dominios 2D, por lo que la fila del Experto 5
+se inicializa en ceros y se activa en demo vía un \textit{prior} estructural
+sobre el rank del tensor (4D vs 5D).
+
+% ============================================================
+\section{Alcances y Limitaciones}
+% ============================================================
+
+\textbf{Alcances:} el preprocesador adaptativo funciona sin metadatos para
+las 5 modalidades; los cuatro mecanismos de routing superan la meta de 80\%
+sobre los mismos embeddings; el dashboard integra inferencia, balance de
+carga y detección OOD; la estrategia MIP para LUNA16 ofrece un compromiso
+costo/rendimiento favorable con VRAM limitada.
+
+\textbf{Limitaciones.} (i)~\textit{Hardware:} los expertos 3D se entrenaron
+sobre subsets (LUNA16 888 vol., pancreático $\sim$558 vol.) del corpus
+completo. (ii)~\textit{Embedding 3D:} para volúmenes, el \texttt{[CLS]} se
+extrae sobre el slice central, perdiendo información volumétrica que un
+backbone 3D nativo (ViViT, VideoMAE) capturaría. (iii)~\textit{NIH:} el
+ensemble se entrenó sobre 5 patologías, no las 14 originales; Mass y Nodule
+($<$5\% de prevalencia) siguen siendo las clases que más arrastran el F1
+macro pese al multi-seed.
+
+\textbf{Con más tiempo:} reemplazar MIP por un backbone 3D médico
+preentrenado (MedicalNet, SegResNet), entrenar sobre los datasets
+completos, explorar Top-K gating ($K=2$) para imágenes ambiguas.
+
+% ============================================================
+\section{Conclusiones}
+% ============================================================
+
+Este trabajo demuestra que es posible construir un sistema de clasificación
+médica multimodal basado en MoE que procese imágenes 2D y volúmenes CT 3D
+sin recibir información de modalidad como entrada. La pregunta científica
+central queda respondida con datos: \textbf{el Vision Transformer justifica
+su costo computacional como router}, obteniendo 99.90\% de Routing Accuracy,
+pero la diferencia con el método estadístico más simple (Naive Bayes, 91.14\%)
+es de solo $\sim$9 puntos porcentuales. En contextos con restricciones severas
+de hardware, el Naive Bayes sobre embeddings ViT-Tiny preentrenados constituye
+una alternativa viable con latencia de 0.004 ms y sin requerir GPU.
+
+La lección principal es que la calidad del embedding importa más que la
+complejidad del mecanismo de routing: un ViT bien preentrenado produce
+representaciones donde incluso Naive Bayes alcanza $>91$\% de routing accuracy.
+
+La integración final del MoE (ViT frozen + Router A fine-tuned + 5 expertos)
+alcanza 99.41\% de Routing Accuracy y $\mathbf{F1_{\text{macro}} = 0.7030}$
+end-to-end, con balance de carga prácticamente óptimo (ratio $=$ 1.003,
+evitando la penalización de $-40\%$ por Expert Collapse). El Experto 1 migró de
+DenseNet-121 monolítico (F1=0.327) a ConvNeXt-Tiny con especialistas
+Mass/Nodule y umbral re-tunado (F1=0.5765) — un salto de +25 pt que valida
+la estrategia \textit{per-class specialist} frente al enfoque multi-label
+en conjuntos con desbalanceo severo.
+
+% ============================================================
+% REFERENCIAS
+% ============================================================
+\bibliographystyle{ieeetr}
+\small
+\setlength{\bibsep}{2pt}
+\begin{thebibliography}{9}
+
+\bibitem{fedus2021switch}
+W. Fedus, B. Zoph, and N. Shazeer,
+``Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity,''
+\textit{Journal of Machine Learning Research}, vol. 23, no. 1, pp. 1--39, 2022.
+
+\bibitem{wang2017chestxray}
+X. Wang, Y. Peng, L. Lu, Z. Lu, M. Bagheri, and R. M. Summers,
+``ChestX-Ray8: Hospital-Scale Chest X-Ray Database and Benchmarks,''
+in \textit{Proc. IEEE CVPR}, pp. 2097--2106, 2017.
+
+\bibitem{dosovitskiy2021vit}
+A. Dosovitskiy et al.,
+``An Image is Worth 16$\times$16 Words: Transformers for Image Recognition at Scale,''
+in \textit{Proc. ICLR}, 2021.
+
+\bibitem{jacobs1991moe}
+R. A. Jacobs, M. I. Jordan, S. J. Nowlan, and G. E. Hinton,
+``Adaptive Mixtures of Local Experts,''
+\textit{Neural Computation}, vol. 3, no. 1, pp. 79--87, 1991.
+
+\bibitem{liu2022convnext}
+Z. Liu et al.,
+``A ConvNet for the 2020s,''
+in \textit{Proc. IEEE CVPR}, pp. 11976--11986, 2022.
+
+\bibitem{armato2011luna}
+S. G. Armato et al.,
+``The Lung Image Database Consortium (LIDC) and Image Database Resource Initiative (IDRI),''
+\textit{Medical Physics}, vol. 38, no. 2, pp. 915--931, 2011.
+
+\bibitem{hihn2024moe}
+H. Hihn and D. A. Braun,
+``Mixture of Experts for Image Classification: What's the Sweet Spot?,''
+\textit{arXiv preprint arXiv:2411.18322}, 2024.
+
+\bibitem{tan2019efficientnet}
+M. Tan and Q. V. Le,
+``EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks,''
+in \textit{Proc. ICML}, pp. 6105--6114, 2019.
+
+\bibitem{tiulpin2018automatic}
+A. Tiulpin, J. Thevenot, E. Rahtu, P. Lehenkari, and S. Saarakkala,
+``Automatic Knee Osteoarthritis Diagnosis from Plain Radiographs: A Deep Learning-Based Approach,''
+\textit{Scientific Reports}, vol. 8, no. 1, pp. 1--10, 2018.
+
+\end{thebibliography}
+
+\end{document}

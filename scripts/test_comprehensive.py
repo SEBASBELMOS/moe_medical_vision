@@ -1,0 +1,116 @@
+import sys
+import random
+from pathlib import Path
+import numpy as np
+import torch
+import torch.nn.functional as F
+from sklearn.metrics import f1_score, accuracy_score
+
+sys.path.insert(0, '/workspace/moe_medical_vision/src')
+from models.moe_system import MoE_System
+from data.datasets import get_dataloader
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+model = MoE_System(device=device)
+model.load_all_weights('/workspace/moe_medical_vision/checkpoints')
+model.eval()
+
+results = {i: {'router_correct': 0, 'y_true': [], 'y_pred': []} for i in range(5)}
+
+def process_3d_npz(file_path):
+    d = np.load(file_path)
+    vol = torch.from_numpy(d['volume'][0].copy()).float()
+    y = int(d['label'])
+    
+    x_3d = vol.unsqueeze(0).unsqueeze(0)
+    
+    mip = torch.stack([vol.max(dim=0)[0], vol.mean(dim=0), vol.std(dim=0)], dim=0)
+    x_224 = F.interpolate(mip.unsqueeze(0), size=(224, 224), mode='bilinear', align_corners=False)
+    
+    return x_224, x_3d, y
+
+print("\nExtrayendo 30 muestras de validación por dataset y evaluando...")
+
+fast_dirs = {
+    3: '/workspace/moe_medical_vision/data/processed/luna16_fast',
+    4: '/workspace/moe_medical_vision/data/processed/pancreatic_fast'
+}
+
+for exp_id, root in fast_dirs.items():
+    files = list(Path(root).glob('val_*.npz'))
+    selected = random.sample(files, min(30, len(files)))
+    for f in selected:
+        x_224, x_3d, y_true = process_3d_npz(f)
+        with torch.no_grad():
+            out, best_idx, _ = model(x_224.to(device), x_3d=x_3d.to(device))
+        
+        if best_idx == exp_id: results[exp_id]['router_correct'] += 1
+        pred = torch.argmax(out, dim=-1).item()
+        results[exp_id]['y_true'].append(y_true)
+        results[exp_id]['y_pred'].append(pred)
+
+ds_names = {
+    0: ('nih_chestxray', '/workspace/moe_medical_vision/data/raw/nih'),
+    1: ('isic2019', '/workspace/moe_medical_vision/data/raw/isic'),
+    2: ('osteoarthritis', '/workspace/moe_medical_vision/data/raw/osteoporosis/train')
+}
+
+for exp_id, (name, root) in ds_names.items():
+    loader, ds = get_dataloader(name, root, split='val', batch_size=1, num_workers=0)
+    indices = random.sample(range(len(ds)), min(30, len(ds)))
+    
+    for idx in indices:
+        item = ds[idx]
+        x_224 = item['image'].unsqueeze(0)
+        if x_224.shape[1] == 1: x_224 = x_224.repeat(1, 3, 1, 1)
+        if x_224.shape[-1] != 224:
+            x_224 = F.interpolate(x_224, size=(224, 224), mode='bilinear', align_corners=False)
+            
+        if exp_id == 0:
+            y_true_vec = item['label'].numpy()
+        else:
+            y_true = item['label']
+        
+        with torch.no_grad():
+            out, best_idx, _ = model(x_224.to(device))
+        
+        if best_idx == exp_id: results[exp_id]['router_correct'] += 1
+        pred = torch.argmax(out, dim=-1).item()
+        
+        if exp_id == 0: results[exp_id]['y_true'].append(y_true_vec)
+        else: results[exp_id]['y_true'].append(y_true)
+        results[exp_id]['y_pred'].append(pred)
+
+NAMES = {0: 'NIH ChestX-ray14', 1: 'ISIC 2019 (Piel)', 2: 'Osteoarthritis (Rodilla)', 3: 'LUNA16 (Pulmón 3D)', 4: 'Pancreatic Cancer (3D)'}
+print("\n" + "="*80)
+print("  REPORTE DE TEST MASIVO DEL SISTEMA MoE (30 Muestras por Experto)")
+print("="*80)
+
+total_samples = 0
+total_router_correct = 0
+
+for exp_id in range(5):
+    res = results[exp_id]
+    n_samples = len(res['y_pred'])
+    total_samples += n_samples
+    total_router_correct += res['router_correct']
+    
+    print(f"\n--- Experto {exp_id}: {NAMES[exp_id]} ---")
+    print(f"➜ Routing Accuracy: {res['router_correct']}/{n_samples} ({(res['router_correct']/n_samples)*100:.1f}%)")
+    
+    if exp_id == 0:
+        correct_preds = 0
+        for yt, yp in zip(res['y_true'], res['y_pred']):
+            if yt[yp] == 1: correct_preds += 1
+        print(f"➜ Acierto Experto (Multi-etiqueta): {correct_preds}/{n_samples} ({(correct_preds/n_samples)*100:.1f}%)")
+    else:
+        clases_predichas = len(set(res['y_pred']))
+        if clases_predichas == 1 and n_samples > 10:
+            print(f"  ⚠️ ¡ALERTA! Modelo colapsado. Predijo la misma clase para las 30 imágenes.")
+        else:
+            print(f"  ✅ Modelo sano. Predijo {clases_predichas} clases diferentes.")
+
+print("\n" + "="*80)
+print(f"ROUTING GLOBAL ACCURACY DEL SISTEMA: {total_router_correct}/{total_samples} ({(total_router_correct/total_samples)*100:.1f}%)")
+print("="*80)
