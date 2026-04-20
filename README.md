@@ -1,37 +1,53 @@
 # MoE Medical Vision
 
-Implementacion del proyecto de Mixture of Experts (MoE) para vision medica multimodal con 3 expertos 2D, 2 expertos 3D, un backbone ViT para routing y un dashboard en Streamlit.
+Implementación del proyecto de Mixture of Experts (MoE) para visión médica multimodal con 3 expertos 2D, 2 expertos 3D, backbone ViT para routing y dashboard en Streamlit.
+
+## Estado actual resumido
+
+### Expertos
+- **Exp. 1 NIH ChestX-ray14**: ensemble híbrido NIH (ConvNeXt + especialistas por clase) — **F1 macro 0.5765**, AUC 0.7663.
+- **Exp. 2 ISIC 2019**: EfficientNet-B3 — **F1 macro ~0.79**.
+- **Exp. 3 Osteoarthritis**: ResNet-34 — **F1 macro ~0.84–0.90** según evaluación.
+- **Exp. 4 LUNA16**: MC3-18 3D — **F1 macro 0.6571**.
+- **Exp. 5 Pancreatic Cancer**: R3D-18 — **F1 macro 0.7553**.
+
+### Router
+- Ablation study formal de 4 routers rehecho en sandbox balanceado (`/workspace/router_moe_rebuild`).
+- Ganador del ablation: **ViT + Linear**.
+- Para runtime, la integración operativa evolucionó a un **router jerárquico**:
+  - 2D color → ISIC
+  - 2D radiografía → sub-router NIH vs Osteo
+  - 3D → sub-router LUNA vs Páncreas
+
+### Dashboard
+- Streamlit funcional en VAST.
+- URL pública temporal (quick tunnel / exposición según instancia activa).
+- La app consume el `moe_system.py` del proyecto y los checkpoints reales del servidor.
 
 ## Contenido del repo
-
-- `notebooks/`: flujo principal del proyecto, desde verificacion del pod hasta integracion end-to-end.
-- `src/`: datasets, modelos, losses y utilidades de entrenamiento.
-- `scripts/`: utilidades auxiliares para entrenamiento, precomputo, tests y recuperacion.
-- `checkpoints/`: pesos entrenados y metricas.
-- `embeddings/`: CLS tokens y artefactos del router.
+- `notebooks/`: flujo principal del proyecto.
+- `src/`: datasets, modelos, losses y utilidades.
+- `scripts/`: entrenamiento, tests, extracción de embeddings, recuperación y utilidades del router.
+- `checkpoints/`: pesos y métricas (no siempre se versionan completas en Git).
+- `embeddings/`: embeddings CLS y artefactos del router.
 - `app.py`: demo de inferencia en Streamlit.
 
 ## Requisitos
 
-- Python 3.10 o 3.11.
-- GPU NVIDIA recomendada para entrenamiento (Usada una 4090 por medio de una instacia de vast.ai).
-- Estructura esperada en el pod: `/workspace/moe_medical_vision`.
-- Datasets descomprimidos en `/workspace/moe_medical_vision/data/raw`.
+### Python
+- Python **3.10+** recomendado.
 
-Instalacion base:
-
+### Dependencias
+Instalación base:
 ```bash
 git clone https://github.com/SEBASBELMOS/moe_medical_vision.git
-```
-
-```bash
+cd moe_medical_vision
 pip install -r requirements.txt
 ```
 
-Si tu entorno usa CUDA especifica, instala `torch`, `torchvision` y `torchaudio` con las ruedas compatibles antes o despues del `requirements.txt`, segun el selector oficial de PyTorch.
+Si tu entorno CUDA requiere ruedas específicas de PyTorch, instala `torch`, `torchvision` y `torchaudio` compatibles con tu versión de CUDA.
 
-Si vas a descargar datasets desde Kaggle o crear repos en Hugging Face, exporta antes tus credenciales en el entorno:
-
+## Variables útiles
 ```bash
 export KAGGLE_USERNAME=tu_usuario
 export KAGGLE_KEY=tu_api_key
@@ -39,35 +55,16 @@ export HF_TOKEN=tu_token
 ```
 
 ## Reproducibilidad
+Semilla fija `42` usada en notebooks y scripts principales.
 
-El proyecto usa semilla fija `42` en los notebooks principales y en el codigo fuente:
-
-- `notebooks/01_train_experts_2D.ipynb`
-- `notebooks/01B_train_experts_3D.ipynb`
-- `notebooks/02_backbone_y_routers.ipynb`
-- `notebooks/03_moe_system.ipynb`
-- `src/config.py`
-- `src/train/train_3d.py`
-
-Para entrenamiento 3D se dejo `cudnn.deterministic = True` y `cudnn.benchmark = False` para que el comportamiento quede alineado con la rubric de reproducibilidad.
-
-## Orden recomendado de ejecucion
-
+## Flujo recomendado
 1. `notebooks/00_setup_verificacion.ipynb`
 2. `notebooks/01_train_experts_2D.ipynb`
 3. `notebooks/01B_train_experts_3D.ipynb`
 4. `notebooks/02_backbone_y_routers.ipynb`
 5. `notebooks/03_moe_system.ipynb`
 
-Notebooks auxiliares:
-
-- `notebooks/download_datasets.ipynb`: descarga inicial de datasets.
-- `notebooks/post_reboot.ipynb`: recuperacion rapida despues de reinicio del pod.
-
-## Estructura de datos esperada
-
-El codigo asume las siguientes rutas base:
-
+## Estructura esperada
 ```text
 /workspace/moe_medical_vision/
 |-- app.py
@@ -85,48 +82,29 @@ El codigo asume las siguientes rutas base:
         `-- pancreatic/
 ```
 
-Las rutas exactas usadas por el proyecto se centralizan en `src/config.py`.
+## Scripts recientes importantes
+### Router / integración
+- `scripts/train_router_linear_param.py`
+- `scripts/router_ablation_balanced.py`
+- `scripts/train_hierarchical_router.py`
+- `scripts/train_router_2d_v2.py`
+- `scripts/train_router_3d_v4.py`
+- `scripts/test_moe_app_aligned.py`
 
-## Flujo resumido
-
-### 1. Verificacion del pod
-
-`00_setup_verificacion.ipynb` valida espacio en disco, imports, rutas y deteccion basica de datasets.
-
-### 2. Entrenamiento de expertos
-
-- `01_train_experts_2D.ipynb`: NIH, ISIC 2019 y osteoarthritis.
-- `01B_train_experts_3D.ipynb`: LUNA16 y pancreatic.
-
-Los mejores pesos quedan en `checkpoints/`.
-
-### 3. Backbone y routers
-
-`02_backbone_y_routers.ipynb` extrae embeddings CLS y entrena/compra routers lineal, GMM, Naive Bayes y FAISS k-NN.
-
-Los artefactos intermedios quedan en `embeddings/`.
-
-### 4. Integracion MoE
-
-`03_moe_system.ipynb` integra expertos, router, auxiliary loss y fine-tuning del sistema global.
+### NIH / especialistas
+- `scripts/train_nih_subset_cached_param.py`
+- `scripts/train_nih_specialist.py`
+- `scripts/eval_hybrid_ensemble_mass_nodule.py`
 
 ## Demo
-
-Para levantar la app:
-
+Para levantar la app localmente:
 ```bash
 streamlit run app.py
 ```
 
-La demo espera checkpoints y artefactos del router ya generados en `checkpoints/` y `embeddings/`.
-
-Para visualizar lo de manera más sencilla, se puede abrir este link donde alojamos una version desplegada del dashboard: https://use-instrumental-sie-sie.trycloudflare.com/
-
-## Notas 
-
-- Ejecuta siempre `00_setup_verificacion.ipynb` antes de entrenar en un pod nuevo.
-- Si cambias rutas de datos o checkpoints, hazlo desde `src/config.py`.
-- `scripts/` contiene utilidades de apoyo, pero el flujo evaluable principal esta organizado en `notebooks/`.
+## Notas
+- El README describe el estado técnico más reciente, pero algunos resultados detallados están mejor documentados en los artefactos locales del equipo (`context_engineering/` y el paper IEEE).
+- Para la entrega final, el router plano y el router jerárquico deben leerse junto con el análisis del ablation y del runtime.
 
 ---
 
