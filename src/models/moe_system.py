@@ -58,8 +58,7 @@ class MoE_System(nn.Module):
         return model
 
     def _load_exp2_isic(self):
-        model = efficientnet_b3(weights=None)
-        model.classifier[1] = nn.Sequential(nn.Dropout(0.4), nn.Linear(model.classifier[1].in_features, 9))
+        model = timm.create_model('efficientnet_b3', pretrained=False, num_classes=9)
         return model
 
     def _load_exp3_osteo(self):
@@ -167,7 +166,7 @@ class MoE_System(nn.Module):
                 std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1,3,1,1)
                 x_rgb = (x_for_router * std + mean).clamp(0, 1)
                 color_gap = torch.mean(torch.abs(x_rgb[:,0]-x_rgb[:,1])) + torch.mean(torch.abs(x_rgb[:,1]-x_rgb[:,2]))
-                if color_gap.item() > 0.05:
+                if color_gap.item() > 0.02:
                     best_expert_idx = 1
                     expert_probs = torch.zeros((1,5), device=self.device)
                     expert_probs[0, best_expert_idx] = 1.0
