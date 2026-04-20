@@ -1,0 +1,50 @@
+{
+  "router_2d": {
+    "name": "router_2d_linear",
+    "best_acc": 0.995,
+    "epoch": 12,
+    "ckpt": "/workspace/router_moe_rebuild/checkpoints/router_2d_linear.pth",
+    "class_ids": [
+      0,
+      1,
+      2
+    ],
+    "cm": [
+      [
+        200,
+        0,
+        0
+      ],
+      [
+        1,
+        197,
+        2
+      ],
+      [
+        0,
+        0,
+        200
+      ]
+    ]
+  },
+  "router_3d": {
+    "name": "router_3d_linear",
+    "best_acc": 1.0,
+    "epoch": 3,
+    "ckpt": "/workspace/router_moe_rebuild/checkpoints/router_3d_linear.pth",
+    "class_ids": [
+      3,
+      4
+    ],
+    "cm": [
+      [
+        40,
+        0
+      ],
+      [
+        0,
+        40
+      ]
+    ]
+  }
+}

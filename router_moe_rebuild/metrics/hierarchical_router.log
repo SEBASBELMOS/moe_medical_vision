@@ -1,0 +1,117 @@
+router_2d_linear {"epoch": 1, "loss": 0.8598333083921008, "acc_bal": 0.8516666666666667}
+NEW_BEST router_2d_linear epoch=1 acc=0.8517
+router_2d_linear {"epoch": 2, "loss": 0.3536517818768819, "acc_bal": 0.9433333333333334}
+NEW_BEST router_2d_linear epoch=2 acc=0.9433
+router_2d_linear {"epoch": 3, "loss": 0.22737555123037761, "acc_bal": 0.9666666666666667}
+NEW_BEST router_2d_linear epoch=3 acc=0.9667
+router_2d_linear {"epoch": 4, "loss": 0.17123054133521187, "acc_bal": 0.9733333333333334}
+NEW_BEST router_2d_linear epoch=4 acc=0.9733
+router_2d_linear {"epoch": 5, "loss": 0.1359318064318763, "acc_bal": 0.98}
+NEW_BEST router_2d_linear epoch=5 acc=0.9800
+router_2d_linear {"epoch": 6, "loss": 0.114003819723924, "acc_bal": 0.9883333333333333}
+NEW_BEST router_2d_linear epoch=6 acc=0.9883
+router_2d_linear {"epoch": 7, "loss": 0.09785449484156238, "acc_bal": 0.9883333333333333}
+router_2d_linear {"epoch": 8, "loss": 0.08651417141987218, "acc_bal": 0.9933333333333333}
+NEW_BEST router_2d_linear epoch=8 acc=0.9933
+router_2d_linear {"epoch": 9, "loss": 0.07740680583649212, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 10, "loss": 0.07073126277989811, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 11, "loss": 0.06527627549237675, "acc_bal": 0.9916666666666667}
+router_2d_linear {"epoch": 12, "loss": 0.060917583811614245, "acc_bal": 0.995}
+NEW_BEST router_2d_linear epoch=12 acc=0.9950
+router_2d_linear {"epoch": 13, "loss": 0.05664591987927755, "acc_bal": 0.995}
+router_2d_linear {"epoch": 14, "loss": 0.05262188696198993, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 15, "loss": 0.04931602937479814, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 16, "loss": 0.04617207538750437, "acc_bal": 0.995}
+router_2d_linear {"epoch": 17, "loss": 0.04378627778755294, "acc_bal": 0.995}
+router_2d_linear {"epoch": 18, "loss": 0.04310419110374318, "acc_bal": 0.995}
+router_2d_linear {"epoch": 19, "loss": 0.040797568236788116, "acc_bal": 0.995}
+router_2d_linear {"epoch": 20, "loss": 0.03828698562251197, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 21, "loss": 0.037275409429437585, "acc_bal": 0.9933333333333333}
+router_2d_linear {"epoch": 22, "loss": 0.0354623394086957, "acc_bal": 0.995}
+router_2d_linear {"epoch": 23, "loss": 0.03380431835022238, "acc_bal": 0.995}
+router_2d_linear {"epoch": 24, "loss": 0.03349647060450581, "acc_bal": 0.995}
+router_2d_linear {"epoch": 25, "loss": 0.0321450944369038, "acc_bal": 0.995}
+router_3d_linear {"epoch": 1, "loss": 1.271618127822876, "acc_bal": 0.2}
+NEW_BEST router_3d_linear epoch=1 acc=0.2000
+router_3d_linear {"epoch": 2, "loss": 0.8429572582244873, "acc_bal": 0.4375}
+NEW_BEST router_3d_linear epoch=2 acc=0.4375
+router_3d_linear {"epoch": 3, "loss": 0.5647859424352646, "acc_bal": 1.0}
+NEW_BEST router_3d_linear epoch=3 acc=1.0000
+router_3d_linear {"epoch": 4, "loss": 0.3915649950504303, "acc_bal": 1.0}
+router_3d_linear {"epoch": 5, "loss": 0.2903149127960205, "acc_bal": 1.0}
+router_3d_linear {"epoch": 6, "loss": 0.22101545333862305, "acc_bal": 1.0}
+router_3d_linear {"epoch": 7, "loss": 0.15535810589790344, "acc_bal": 1.0}
+router_3d_linear {"epoch": 8, "loss": 0.11010971665382385, "acc_bal": 1.0}
+router_3d_linear {"epoch": 9, "loss": 0.08164633437991142, "acc_bal": 1.0}
+router_3d_linear {"epoch": 10, "loss": 0.06244519166648388, "acc_bal": 1.0}
+router_3d_linear {"epoch": 11, "loss": 0.04627902805805206, "acc_bal": 1.0}
+router_3d_linear {"epoch": 12, "loss": 0.037623196840286255, "acc_bal": 1.0}
+router_3d_linear {"epoch": 13, "loss": 0.02896038256585598, "acc_bal": 1.0}
+router_3d_linear {"epoch": 14, "loss": 0.02433865237981081, "acc_bal": 1.0}
+router_3d_linear {"epoch": 15, "loss": 0.02085090521723032, "acc_bal": 1.0}
+router_3d_linear {"epoch": 16, "loss": 0.018336350098252296, "acc_bal": 1.0}
+router_3d_linear {"epoch": 17, "loss": 0.016930028796195984, "acc_bal": 1.0}
+router_3d_linear {"epoch": 18, "loss": 0.014774700161069632, "acc_bal": 1.0}
+router_3d_linear {"epoch": 19, "loss": 0.013271380215883255, "acc_bal": 1.0}
+router_3d_linear {"epoch": 20, "loss": 0.011969506740570068, "acc_bal": 1.0}
+router_3d_linear {"epoch": 21, "loss": 0.011623264290392399, "acc_bal": 1.0}
+router_3d_linear {"epoch": 22, "loss": 0.010414442047476768, "acc_bal": 1.0}
+router_3d_linear {"epoch": 23, "loss": 0.009973530191928148, "acc_bal": 1.0}
+router_3d_linear {"epoch": 24, "loss": 0.009362570475786924, "acc_bal": 1.0}
+router_3d_linear {"epoch": 25, "loss": 0.009249904658645391, "acc_bal": 1.0}
+router_3d_linear {"epoch": 26, "loss": 0.008480033371597528, "acc_bal": 1.0}
+router_3d_linear {"epoch": 27, "loss": 0.008529063779860735, "acc_bal": 1.0}
+router_3d_linear {"epoch": 28, "loss": 0.007993018487468362, "acc_bal": 1.0}
+router_3d_linear {"epoch": 29, "loss": 0.007885853294283152, "acc_bal": 1.0}
+router_3d_linear {"epoch": 30, "loss": 0.007742278277873993, "acc_bal": 1.0}
+{
+  "router_2d": {
+    "name": "router_2d_linear",
+    "best_acc": 0.995,
+    "epoch": 12,
+    "ckpt": "/workspace/router_moe_rebuild/checkpoints/router_2d_linear.pth",
+    "class_ids": [
+      0,
+      1,
+      2
+    ],
+    "cm": [
+      [
+        200,
+        0,
+        0
+      ],
+      [
+        1,
+        197,
+        2
+      ],
+      [
+        0,
+        0,
+        200
+      ]
+    ]
+  },
+  "router_3d": {
+    "name": "router_3d_linear",
+    "best_acc": 1.0,
+    "epoch": 3,
+    "ckpt": "/workspace/router_moe_rebuild/checkpoints/router_3d_linear.pth",
+    "class_ids": [
+      3,
+      4
+    ],
+    "cm": [
+      [
+        40,
+        0
+      ],
+      [
+        0,
+        40
+      ]
+    ]
+  }
+}
+saved /workspace/router_moe_rebuild/metrics/hierarchical_router_meta.json

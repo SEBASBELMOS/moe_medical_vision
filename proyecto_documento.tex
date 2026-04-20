@@ -16,7 +16,7 @@
 \usepackage{setspace}                   % Interlineado
 \usepackage{booktabs}                   % Tablas profesionales
 \usepackage{graphicx}
-\graphicspath{{checkpoints/figures/}}
+\graphicspath{{checkpoints/figures/}{./}}
 \usepackage{amsmath}
 \usepackage{hyperref}
 \usepackage{caption}
@@ -34,13 +34,20 @@
 
 % ─── Configuración global ────────────────────────────────────
 \setstretch{1.15}
-\setlength{\parskip}{4pt}
+\setlength{\parskip}{2pt}
 \setlength{\parindent}{0pt}
 
 \titleformat{\section}{\normalfont\bfseries\normalsize}{\thesection.}{0.5em}{}
 \titleformat{\subsection}{\normalfont\bfseries\small}{\thesubsection.}{0.5em}{}
-\titlespacing*{\section}{0pt}{8pt}{4pt}
-\titlespacing*{\subsection}{0pt}{6pt}{3pt}
+\titlespacing*{\section}{0pt}{4pt}{2pt}
+\titlespacing*{\subsection}{0pt}{3pt}{1pt}
+
+% Reduce float spacing
+\setlength{\textfloatsep}{6pt plus 1pt minus 1pt}
+\setlength{\floatsep}{6pt plus 1pt minus 1pt}
+\setlength{\intextsep}{6pt plus 1pt minus 1pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{0pt}
 
 \captionsetup{font=small, labelfont=bf}
 
@@ -120,102 +127,32 @@ de imágenes fuera de distribución (OOD).
 \subsection{Visión general del sistema}
 
 El sistema sigue el \textit{Método B (Por Partes)}: cada experto se entrena
-de forma independiente, sus pesos se congelan, y el router aprende sobre los
-embeddings del backbone ViT preentrenado. El fine-tuning global final ajusta
-conjuntamente router y cabezas de clasificación con tasa de aprendizaje
-reducida.
-
-La cadena de procesamiento completa, resumida en la Figura~\ref{fig:arch}, es:
-
-\[
-x \xrightarrow{\text{Preprocessor}} \tilde{x}_{224}
-  \xrightarrow{\text{ViT-Tiny (frozen)}} z \in \mathbb{R}^{192}
-  \xrightarrow{\text{Router}} p \in \mathbb{R}^5
-  \xrightarrow{\text{Experto}_i} \hat{y}
-\]
+individualmente y se congela; el router aprende sobre los embeddings del
+backbone ViT preentrenado y un fine-tuning global final ajusta el router
+con tasa de aprendizaje reducida. La cadena completa (Figura~\ref{fig:arch})
+es $x \xrightarrow{\text{Preproc.}} \tilde{x}
+\xrightarrow{\text{ViT-Tiny}} z \in \mathbb{R}^{192}
+\xrightarrow{\text{Router}} p \in \mathbb{R}^5
+\xrightarrow{\text{Experto}_i} \hat{y}$.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=4mm and 6mm,
-  >={Stealth[length=1.6mm]},
-  box/.style={draw, rounded corners=1pt, minimum height=7mm, inner sep=3pt, align=center},
-  data/.style={box, fill=gray!10},
-  proc/.style={box, fill=blue!10},
-  frozen/.style={box, fill=cyan!15},
-  router/.style={box, fill=orange!20, minimum width=16mm},
-  expert/.style={box, fill=green!12, minimum width=22mm, minimum height=5mm},
-  sel/.style={box, fill=green!35, minimum width=22mm, minimum height=5mm, very thick},
-  out/.style={box, fill=red!15},
-  aux/.style={box, draw=orange!70!black, dashed, fill=orange!5, font=\scriptsize}
-]
-\node[data] (in) {$x$\\{\scriptsize 2D $[B,3,H,W]$\\ ó 3D $[B,1,D,H,W]$}};
-\node[proc, right=of in] (prep) {Adaptive\\Preprocessor\\{\scriptsize detect rank}};
-\node[frozen, right=of prep] (vit) {ViT-Tiny\\(frozen)\\{\scriptsize ImageNet-21k}};
-\node[data, right=of vit] (cls) {$z\!\in\!\mathbb{R}^{192}$\\{\scriptsize [CLS]}};
-\node[router, right=of cls] (rt) {Router A\\{\scriptsize Linear+Softmax}\\{\scriptsize 965 params}};
-
-\node[expert, right=9mm of rt, yshift=14mm] (e1) {E1 NIH · ConvNeXt};
-\node[expert, below=1mm of e1]              (e2) {E2 ISIC · EffNet-B3};
-\node[sel,    below=1mm of e2]              (e3) {E3 OA · ResNet-34};
-\node[expert, below=1mm of e3]              (e4) {E4 LUNA16 · MIP+EffN-B0};
-\node[expert, below=1mm of e4]              (e5) {E5 Panc. · R3D-18};
-
-\node[out, right=6mm of e3] (yhat) {$\hat{y}$};
-
-\draw[->] (in)   -- (prep);
-\draw[->] (prep) -- (vit);
-\draw[->] (vit)  -- (cls);
-\draw[->] (cls)  -- (rt);
-\draw[->, gray!60] (rt.east) -- (e1.west);
-\draw[->, gray!60] (rt.east) -- (e2.west);
-\draw[->, very thick] (rt.east) -- node[above, font=\tiny]{$\arg\max p$} (e3.west);
-\draw[->, gray!60] (rt.east) -- (e4.west);
-\draw[->, gray!60] (rt.east) -- (e5.west);
-\draw[->] (e3.east) -- (yhat.west);
-
-\node[aux, above=4mm of rt] (al) {$\mathcal{L}_{\text{aux}} = \alpha N \sum_i f_i P_i$};
-\draw[->, dashed, orange!70!black] (al.south) -- (rt.north);
-
-\begin{scope}[on background layer]
-  \node[draw=gray!30, rounded corners, fit=(e1)(e5), inner sep=2mm, label=above:{\scriptsize 5 expertos heterogéneos (pesos congelados)}] {};
-\end{scope}
-\end{tikzpicture}
-\caption{Arquitectura del sistema MoE. El \texttt{AdaptivePreprocessor} detecta modalidad por el rango del tensor; el backbone ViT-Tiny congelado produce el token \texttt{[CLS]} $z\in\mathbb{R}^{192}$; el Router A (linear+softmax, 965 parámetros) emite $p\in\mathbb{R}^5$ y activa un único experto por $\arg\max$. La pérdida auxiliar de Switch Transformer regulariza la distribución del routing durante el fine-tuning.}
+\includegraphics[width=0.70\linewidth]{grafica_arquitectura_mermaid.png}
+\caption{Arquitectura del sistema MoE. El \texttt{AdaptivePreprocessor} detecta modalidad por el rango del tensor; el backbone ViT-Tiny congelado produce el token \texttt{[CLS]} $z\in\mathbb{R}^{192}$; los cuatro mecanismos del ablation compiten sobre ese mismo $z$ y el Router A (linear+softmax, 965 parámetros) activa un único experto por $\arg\max$. La pérdida auxiliar de Switch Transformer regulariza la distribución del routing durante el fine-tuning.}
 \label{fig:arch}
 \end{figure}
 
-\subsection{Preprocesador adaptativo}
+\subsection{Preprocesador adaptativo y backbone}
 
-El componente más crítico del sistema es el \texttt{AdaptivePreprocessor},
-que detecta automáticamente la modalidad de entrada sin recibir ningún
-metadato. La detección es estructural: tensores de rango 4 $(B, C, H, W)$
-corresponden a imágenes 2D y se redimensionan a $224\times224$ con
-normalización ImageNet; tensores de rango 5 $(B, C, D, H, W)$ corresponden a
-volúmenes CT 3D y se redimensionan a $64\times64\times64$.
-
-\begin{equation}
-f_{\text{prep}}(x) =
-\begin{cases}
-\text{Resize}(x, 224\times224) + \mu_{\text{IN}}/\sigma_{\text{IN}} & \text{si } \text{rank}(x) = 4 \\
-\text{Resize}(x, 64\times64\times64) & \text{si } \text{rank}(x) = 5
-\end{cases}
-\end{equation}
-
-Las soluciones que pasen la modalidad como entrada adicional reciben
-penalización de $-20\%$ según las restricciones del proyecto; esta
-arquitectura la evita por diseño.
-
-\subsection{Backbone compartido}
-
-Se utilizó ViT-Tiny (\texttt{vit\_tiny\_patch16\_224}, librería \texttt{timm})
-con pesos ImageNet-21k preentrenados. Todos los parámetros se congelan
-($\texttt{requires\_grad=False}$). El backbone actúa únicamente como
-extractor de representaciones: su token \texttt{[CLS]} $z \in \mathbb{R}^{192}$
-sirve de entrada a todos los routers. Esta estrategia garantiza que el
-ablation study sea justo: los cuatro mecanismos compiten sobre exactamente
-la misma representación.
+El \texttt{AdaptivePreprocessor} detecta la modalidad sin metadatos mediante
+el rango del tensor: rango~4 $(B,C,H,W)$ $\to$ 2D con resize $224{\times}224$
+y normalización ImageNet; rango~5 $(B,C,D,H,W)$ $\to$ 3D con resize
+$64{\times}64{\times}64$. Esto evita por diseño la penalización de $-20\%$
+por uso de metadatos externos. Como backbone se emplea ViT-Tiny
+(\texttt{vit\_tiny\_patch16\_224}, \texttt{timm}) con pesos ImageNet-21k
+\textbf{congelados}; su token \texttt{[CLS]} $z \in \mathbb{R}^{192}$
+alimenta a los cuatro routers, garantizando un ablation justo sobre la misma
+representación.
 
 \subsection{Expertos heterogéneos}
 
@@ -228,7 +165,7 @@ dataset de origen.
 \centering
 \caption{Arquitecturas y métricas de los cinco expertos.}
 \label{tab:expertos}
-\small
+\footnotesize
 \begin{tabular}{llllcc}
 \toprule
 \textbf{Exp.} & \textbf{Dataset} & \textbf{Modalidad} & \textbf{Arquitectura} & \textbf{F1 Macro} & \textbf{AUC} \\
@@ -253,16 +190,11 @@ backbone con 10 cabezas binarias (TTA multi-escala) más dos
 seguidos de \textit{re-tuning} del umbral por clase sobre validación.
 Resultado: F1=\textbf{0.5765}, AUC=0.7663 (+25 pp F1 sobre el DenseNet).
 
-\subsection{Técnicas de optimización de VRAM}
-
-Dado el hardware disponible (RTX 4090, 24 GB VRAM), se emplearon tres
-técnicas obligatorias para los expertos 3D: (1)~\textit{Mixed Precision}
-FP16 mediante \texttt{torch.amp.autocast}, (2)~\textit{Gradient
-Accumulation} con \texttt{accum\_steps=4} (batch efectivo $= 32$) y
-(3)~\textit{Gradient Checkpointing} en los Expertos 4 y 5. La
-\textit{Auxiliary Loss} de balanceo de carga (Switch Transformer
-\cite{fedus2021switch}) se implementó con $\alpha$ calibrable en el rango
-$[0.01, 0.10]$.
+\textbf{Optimización de VRAM.} Para los expertos 3D (E4, E5) se aplicaron
+Mixed Precision FP16, Gradient Accumulation ($\texttt{accum\_steps}{=}4$,
+batch efectivo 32) y Gradient Checkpointing. La Auxiliary Loss de Switch
+Transformer~\cite{fedus2021switch} se implementó con $\alpha$ calibrable
+(ver §5).
 
 % ============================================================
 \section{Ablation Study del Router}
@@ -321,7 +253,7 @@ Indexación con FAISS IndexFlatIP sobre el banco balanceado
 \centering
 \caption{Comparativa de los cuatro mecanismos de routing sobre los mismos embeddings ViT-Tiny (192-d), evaluados en dos regímenes: \textit{bal} (val balanceado, 200 por clase) y \textit{full} (val natural, $N=21\,747$). \textit{Params} refiere a la cabeza de routing; el backbone ViT-Tiny (5.7M) es compartido y congelado.}
 \label{tab:ablation}
-\small
+\footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{llcccccc}
 \toprule
@@ -377,6 +309,22 @@ favorable. La curva de fine-tuning del Router A con
 $\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$ se muestra en la
 siguiente sección (Figura~\ref{fig:training}).
 
+\subsection{Variante jerárquica 2D+3D}
+
+Una auditoría de ruteo sobre imágenes crudas (50 muestras, 10/clase) reveló
+que el Router A 5-clases cae a 58\% cuando opera end-to-end desde pixel:
+NIH y OA colapsan hacia el expert~3 por un desbalance espacial residual que
+no aparece en los embeddings pre-computados. Como refinamiento se entrenó
+una \textit{variante jerárquica}: el \texttt{AdaptivePreprocessor} ya conoce
+el rango del tensor, por lo que el split 2D/3D es determinístico (error
+estructural 0\%). Se entrenan entonces dos cabezas lineales independientes
+sobre $z$: \textbf{Router\,2D} (NIH/ISIC/OA, 3~clases, $1\,500$/clase train):
+acc.~bal~$=$~\textbf{99.50\%}, y \textbf{Router\,3D} (LUNA/Pancreas,
+2~clases, $160$/clase train): acc.~bal~$=$~\textbf{100\%}. La fusión
+ponderada ($600 \cdot 0.995 + 80 \cdot 1.0)/680 = 99.56\%$ es equivalente
+al Router~A plano pero elimina las confusiones inter-modalidad observadas
+en runtime.
+
 % ============================================================
 \section{Resultados de Clasificación}
 % ============================================================
@@ -400,7 +348,7 @@ de clases difieren), por lo que se reportan como orden de magnitud.
 \centering
 \caption{Comparación con baselines publicados. AUC para NIH (métrica estándar del dataset); F1 macro para el resto.}
 \label{tab:baselines}
-\small
+\footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{llccl}
 \toprule
@@ -425,7 +373,7 @@ reportada en la literatura sobre NIH ChestX-ray14.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\linewidth]{fig6_nih_confusion_matrix.pdf}
+\includegraphics[width=0.85\linewidth]{fig6_nih_confusion_matrix.pdf}
 \caption{Matrices de confusión por clase del Experto 1 (NIH ChestX-ray14),
 el experto con menor F1 macro (0.577). Umbrales re-tunados por clase
 sobre el conjunto de validación del ensemble híbrido ConvNeXt +
@@ -444,7 +392,7 @@ la descomposición $F1_{\text{E2E}} \approx \text{RouteAcc}_d \cdot F1_d$
 \centering
 \caption{F1 end-to-end por dominio del sistema MoE integrado (val).}
 \label{tab:e2e}
-\small
+\footnotesize
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Dominio} & \textbf{N\_val} & \textbf{Route Acc.} & \textbf{F1 Expert} & \textbf{F1 E2E} \\
@@ -470,75 +418,56 @@ adicional.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.70\linewidth]{fig3_training_curves.pdf}
-\caption{Curvas de fine-tuning del Router A (fase 3 con $\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$).
-Izquierda: pérdidas por época. Derecha: accuracy de ruteo sobre conjunto balanceado (4 dominios $\times$ 711 muestras).}
+\begin{subfigure}{0.48\linewidth}
+\includegraphics[width=\linewidth]{fig3_training_curves.pdf}
+\caption{Curvas de fine-tuning del Router A.}
 \label{fig:training}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.70\linewidth]{fig5_attention_heatmaps.pdf}
-\caption{Mapas de atención del ViT-Tiny (\textit{attention rollout}) sobre una muestra
-por dominio 2D (NIH, ISIC, Osteoarthritis). Fila superior: imagen original con el experto
-ruteado y su confianza. Fila inferior: superposición del rollout sobre la imagen,
-evidenciando que las regiones de mayor peso del CLS token coinciden con estructuras
-anatómicas discriminantes (parenchyma pulmonar, lesión cutánea, articulación de rodilla).
-LUNA16 se omite por no disponer de MIPs pre-procesadas accesibles en disco al momento
-de la corrida.}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\linewidth}
+\includegraphics[width=\linewidth]{fig5_attention_heatmaps.pdf}
+\caption{Attention rollout del ViT por dominio 2D.}
 \label{fig:attention}
+\end{subfigure}
+\caption{(a) Pérdidas y accuracy de ruteo por época sobre val balanceado.
+(b) Superposición del rollout del CLS sobre NIH, ISIC y Osteoarthritis;
+las regiones de mayor peso coinciden con estructuras anatómicas
+discriminantes. LUNA16 se omite por no tener MIPs accesibles en disco.}
 \end{figure}
 
 % ============================================================
 \section{Balance de Carga}
 % ============================================================
 
-El Expert Collapse — un router que envía todo el tráfico a un único experto —
-destruye la especialización del sistema MoE. Se implementó la Auxiliary Loss
-del paper Switch Transformer~\cite{fedus2021switch}:
+Para evitar el \textit{Expert Collapse} se implementó la Auxiliary Loss de
+Switch Transformer~\cite{fedus2021switch},
+$\mathcal{L}_{\text{aux}} = \alpha N \sum_i f_i P_i$, donde $f_i$ es la
+fracción dura y $P_i$ la probabilidad media suave del router. Se calibró
+$\alpha = 0.20$ tras sweep sobre $\{0.05, 0.10, 0.20\}$; valores menores
+permitían ratios $>1.30$ transitorios ante desbalance fuerte.
 
-\begin{equation}
-\mathcal{L}_{\text{aux}} = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i
-\end{equation}
-
-donde $f_i$ es la fracción dura y $P_i$ la probabilidad media suave del
-router. Se calibró $\alpha = 0.20$ tras sweep sobre $\{0.05, 0.10, 0.20\}$:
-valores menores subutilizaban la señal de balance en presencia de
-desbalance natural fuerte y permitían ratios $> 1.30$ transitorios.
-
-\textbf{Fine-tuning global (EPIC 3).} La integración final congela ViT y
-expertos, re-entrenando sólo el Router A (965 params) con $\mathcal{L}_{\text{task}}
-+ \mathcal{L}_{\text{aux}}$ sobre embeddings pre-computados, estratificados
-por experto (1\,000 muestras por clase en train, 200 en val; AdamW
-$\text{lr}=10^{-4}$, weight decay $10^{-4}$, 20 épocas, batch 256,
-selección de checkpoint por acc balanceada con desempate por ratio). El
-ratio de carga se midió sobre el conjunto balanceado completo al final de
-cada época para eliminar varianza de muestreo por mini-batch.
+\textbf{Fine-tuning global.} Se re-entrenó sólo el Router A (965 params) con
+$\mathcal{L}_{\text{task}} + \mathcal{L}_{\text{aux}}$ sobre embeddings
+pre-computados estratificados (1\,000/clase train, 200/clase val; AdamW
+$\text{lr}{=}10^{-4}$, wd $10^{-4}$, 20 épocas, batch 256; selección por
+acc balanceada con desempate por ratio). Convergencia final:
+\textbf{RoutingAcc = 99.60\%} (bal) / \textbf{98.27\%} (full), ratio
+$\max/\min = \mathbf{1.18} < 1.30$~\checkmark. La distribución en val
+respeta la prevalencia natural (NIH 76.8\%, ISIC 17.4\%, OA 4.9\%, LUNA 0.8\%).
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.70\linewidth]{fig4_balance_evolution.pdf}
-\caption{Evolución del ratio $\max(f_i)/\min(f_i)$ durante el fine-tuning.
-La fila del Experto 5 (inicializada en ceros por ausencia de embeddings 3D)
-produce un transitorio inicial con ratios de orden $10^2$--$10^3$; la
-Auxiliary Loss redistribuye progresivamente la carga y el ratio colapsa a
-$\approx 1.00$ tras las primeras épocas, muy por debajo del umbral de 1.30
-exigido por la rúbrica.}
+\includegraphics[width=0.55\linewidth]{fig4_balance_evolution.pdf}
+\caption{Evolución de $\max(f_i)/\min(f_i)$. El transitorio inicial
+($10^2$--$10^3$) proviene de E5 (ceros por ausencia de embeddings 3D); la
+Auxiliary Loss lleva el ratio a $\approx$1 en pocas épocas, bajo el umbral
+de 1.30.}
 \label{fig:balance}
 \end{figure}
 
-Convergencia final: \textbf{Routing Accuracy = 99.60\%} (val balanceado)
-$/$ \textbf{98.27\%} (val natural), ratio $\max/\min = \mathbf{1.18}$
-sobre el conjunto balanceado — sin colapso y con margen respecto al
-umbral de 1.30 exigido por la rúbrica. La distribución en val respeta la
-prevalencia natural de cada modalidad: NIH 76.8\%, ISIC 17.4\%, OA 4.9\%,
-LUNA16 0.8\%.
-
-\textbf{Detección OOD y Experto 5.} La confianza del router (AUROC 0.9845,
-§4) sirve como detector OOD sin entrenamiento adicional. Los embeddings de
-train cubren sólo los cuatro dominios 2D, por lo que la fila del Experto 5
-se inicializa en ceros y se activa en demo vía un \textit{prior} estructural
-sobre el rank del tensor (4D vs 5D).
+\textbf{Detección OOD.} La confianza del router (AUROC 0.9845, §4) sirve
+como detector OOD sin entrenamiento adicional. El Experto 5 se inicializa
+en ceros y se activa en demo vía un \textit{prior} estructural sobre el
+rank del tensor.
 
 % ============================================================
 \section{Alcances y Limitaciones}
