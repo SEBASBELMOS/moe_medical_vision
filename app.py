@@ -29,6 +29,17 @@ class LinearGatingHead(nn.Module):
         return F.softmax(self.forward_logits(z), dim=-1)
 
 
+class LinearHead(nn.Module):
+    """Cabeza lineal de clases arbitrarias (para routers jerárquicos 2D/3D)."""
+
+    def __init__(self, d_model, n_classes):
+        super().__init__()
+        self.gate = nn.Linear(d_model, n_classes)
+
+    def forward(self, z):
+        return self.gate(z)
+
+
 def compute_router_attention_rollout(backbone, router_head, tensor_224, target_idx=None):
     """Gradient-weighted attention rollout for Router A (ViT + Linear).
     Returns a 2D numpy heatmap in [0, 1] of shape (side, side)."""
@@ -600,6 +611,42 @@ def load_router_a(device):
     return None, None, {}
 
 
+@st.cache_resource
+def load_hierarchical_routers(device):
+    """Carga los dos routers jerárquicos (2D: NIH/ISIC/Osteo, 3D: LUNA/Pancreas).
+
+    Ambos consumen el token CLS (192-dim) del mismo backbone ViT-Tiny.
+    El 2D devuelve clases locales {0,1,2} → globales {0,1,2}.
+    El 3D devuelve clases locales {0,1}   → globales {3,4}.
+    """
+    ckpt_dir = Path("/workspace/router_moe_rebuild/checkpoints")
+    candidates_2d = ["router_2d_linear_v2.pth", "router_2d_linear.pth"]
+    candidates_3d = ["router_3d_linear_v4.pth", "router_3d_linear_v3.pth", "router_3d_linear.pth"]
+
+    def _load(candidates, n_classes):
+        for name in candidates:
+            p = ckpt_dir / name
+            if p.exists():
+                ckpt = torch.load(p, map_location=device, weights_only=False)
+                state = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
+                head = LinearHead(d_model=192, n_classes=n_classes).to(device)
+                head.load_state_dict(state, strict=False)
+                head.eval()
+                meta = {
+                    "ckpt": name,
+                    "best_acc": ckpt.get("best_acc") if isinstance(ckpt, dict) else None,
+                    "epoch": ckpt.get("epoch") if isinstance(ckpt, dict) else None,
+                    "class_ids": ckpt.get("class_ids") if isinstance(ckpt, dict) else None,
+                    "cm": ckpt.get("confusion_matrix") if isinstance(ckpt, dict) else None,
+                }
+                return head, meta
+        return None, {}
+
+    head_2d, meta_2d = _load(candidates_2d, 3)
+    head_3d, meta_3d = _load(candidates_3d, 2)
+    return head_2d, meta_2d, head_3d, meta_3d
+
+
 def run_expert_by_index(model, best_idx, tensor_224, tensor_3d, device):
     expert_input = tensor_224
     if best_idx in [3, 4]:
@@ -624,10 +671,14 @@ def run_expert_by_index(model, best_idx, tensor_224, tensor_3d, device):
 
 model, device, router_ready = load_moe_system()
 router_a, router_a_ckpt, router_a_meta = load_router_a(device)
+router_2d, router_2d_meta, router_3d, router_3d_meta = load_hierarchical_routers(device)
+hierarchical_ready = router_2d is not None and router_3d is not None
 
 available_routers = []
 if router_a is not None:
     available_routers.append("Router A — ViT + Linear")
+if hierarchical_ready:
+    available_routers.append("Router Jerárquico 2D+3D")
 if router_ready:
     available_routers.append("Router D — ViT + PCA + k-NN (FAISS)")
 if not available_routers:
@@ -643,6 +694,8 @@ router_choice = st.sidebar.radio(
 
 if router_choice.startswith("Router A"):
     router_mode = "router_a"
+elif router_choice.startswith("Router Jer"):
+    router_mode = "hierarchical"
 elif router_choice.startswith("Router D"):
     router_mode = "knn"
 else:
@@ -658,6 +711,18 @@ if router_mode == "router_a":
         meta_bits.append(f"ratio_bal={ratio_bal:.2f}")
     meta_str = f" ({', '.join(meta_bits)})" if meta_bits else ""
     st.success(f"Router A cargado desde `{router_a_ckpt}`{meta_str}.")
+elif router_mode == "hierarchical":
+    acc2 = router_2d_meta.get("best_acc")
+    acc3 = router_3d_meta.get("best_acc")
+    bits = []
+    if acc2 is not None:
+        bits.append(f"2D acc_bal={acc2:.3f}")
+    if acc3 is not None:
+        bits.append(f"3D acc_bal={acc3:.3f}")
+    meta_str = f" ({', '.join(bits)})" if bits else ""
+    st.success(
+        f"Router Jerárquico activo — `{router_2d_meta.get('ckpt')}` + `{router_3d_meta.get('ckpt')}`{meta_str}."
+    )
 elif router_mode == "knn":
     st.success("Router D (k-NN + PCA + FAISS) activo — usando artefactos en `checkpoints/`.")
 else:
@@ -835,6 +900,15 @@ with col1:
                 st.image(preview_img, caption="Imagen 2D", width=300)
                 heatmap_base_img = preview_img
 
+            adapted_dim = (
+                "MIP 3ch → 224×224 (proxy ViT)"
+                if is_3d
+                else "224×224×3, norm ImageNet"
+            )
+            st.caption(
+                f"**Entrada original:** {dim_orig} &nbsp;•&nbsp; **Adaptada:** {adapted_dim}"
+            )
+
             tensor_224 = tensor_224.to(device)
             if tensor_3d is not None:
                 tensor_3d = tensor_3d.to(device)
@@ -844,6 +918,29 @@ with col1:
                     z = model.backbone(tensor_224)
                     expert_probs = router_a(z)
                     best_idx = int(expert_probs.argmax(dim=-1).item())
+                    expert_output = run_expert_by_index(
+                        model, best_idx, tensor_224, tensor_3d, device
+                    )
+                elif router_mode == "hierarchical":
+                    z = model.backbone(tensor_224)
+                    if is_3d:
+                        logits_local = router_3d(z)
+                        probs_local = torch.softmax(logits_local, dim=-1)
+                        local_idx = int(probs_local.argmax(dim=-1).item())
+                        class_ids = router_3d_meta.get("class_ids") or [3, 4]
+                        best_idx = int(class_ids[local_idx])
+                        expert_probs = torch.zeros((1, 5), device=device)
+                        for i, cid in enumerate(class_ids):
+                            expert_probs[0, int(cid)] = probs_local[0, i]
+                    else:
+                        logits_local = router_2d(z)
+                        probs_local = torch.softmax(logits_local, dim=-1)
+                        local_idx = int(probs_local.argmax(dim=-1).item())
+                        class_ids = router_2d_meta.get("class_ids") or [0, 1, 2]
+                        best_idx = int(class_ids[local_idx])
+                        expert_probs = torch.zeros((1, 5), device=device)
+                        for i, cid in enumerate(class_ids):
+                            expert_probs[0, int(cid)] = probs_local[0, i]
                     expert_output = run_expert_by_index(
                         model, best_idx, tensor_224, tensor_3d, device
                     )
@@ -906,8 +1003,15 @@ with col2:
         st.header("3. Router y Load Balancing")
         exp_info = EXPERTOS_INFO[best_idx]
 
+        router_label_map = {
+            "router_a": "A — ViT + Linear",
+            "hierarchical": "Jerárquico 2D+3D → " + ("3D (LUNA/Pancreas)" if is_3d else "2D (NIH/ISIC/Osteo)"),
+            "knn": "D — ViT + k-NN",
+            "fallback": "Fallback heurístico",
+        }
+        router_label = router_label_map.get(router_mode, router_mode)
         st.info(
-            f"**Experto Activado:** {exp_info['nombre']}\n\n**Arquitectura:** {exp_info['arq']}\n\n**Dataset Origen:** {exp_info['dataset']}\n\n**Confianza del Router:** {expert_probs_np[best_idx] * 100:.2f}%\n\n**Router usado:** {'A — ViT + Linear' if router_mode == 'router_a' else ('D — ViT + k-NN' if router_mode == 'knn' else 'Fallback heurístico')}"
+            f"**Experto Activado:** {exp_info['nombre']}\n\n**Arquitectura:** {exp_info['arq']}\n\n**Dataset Origen:** {exp_info['dataset']}\n\n**Confianza del Router:** {expert_probs_np[best_idx] * 100:.2f}%\n\n**Router usado:** {router_label}"
         )
 
         st.subheader("Attention Heatmap del Router")
