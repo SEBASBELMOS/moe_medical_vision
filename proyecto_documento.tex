@@ -277,13 +277,26 @@ almacenaron en disco ($Z_{\text{train}} \in \mathbb{R}^{121287 \times 192}$,
 $Z_{\text{val}} \in \mathbb{R}^{21747 \times 192}$) para garantizar
 reproducibilidad y eficiencia.
 
+\textbf{Subset balanceado por experto.} El desbalance natural
+(NIH $\gg$ ISIC $\gg$ OA $\gg$ LUNA $\gg$ Pancreas) sesga cualquier
+comparación: un router que siempre predijera NIH alcanzaría $\approx$77\%
+en val completo. Para una comparación justa se construye un subset
+balanceado por experto mediante muestreo estratificado: 1\,000 muestras
+por clase en entrenamiento (5\,000 totales) y 200 por clase en validación
+balanceada. Se reportan \textit{ambas} métricas: \textit{Routing Acc.
+(bal)} sobre val balanceado —la métrica justa para comparar routers— y
+\textit{Routing Acc. (full)} sobre val natural —la métrica operativa del
+sistema en producción.
+
 \subsection{Los cuatro mecanismos}
 
 \textbf{Router A — ViT + Linear + Softmax (baseline DL):}
 \[
 g(z) = \text{softmax}(W z + b), \quad W \in \mathbb{R}^{5 \times 192}
 \]
-Entrenado con CrossEntropyLoss durante 30 épocas con Adam ($\text{lr}=10^{-3}$).
+Entrenado con CrossEntropyLoss $+$ Auxiliary Loss ($\alpha=0.2$) durante
+20 épocas con AdamW ($\text{lr}=10^{-4}$, weight decay $10^{-4}$,
+batch 256) sobre el subset balanceado.
 
 \textbf{Router B — GMM (paramétrico estadístico):}
 Gaussian Mixture Model con 5 componentes, ajuste por Expectation-Maximization.
@@ -299,58 +312,70 @@ iterativa: tiempo de ajuste $< 0.13$ segundos.
 $k=5$ vecinos más cercanos con distancia coseno. PCA previo de
 $192 \to 32$ dimensiones (varianza explicada: 84.53\%) para mitigar la
 maldición de la dimensionalidad, como advierte el profesor en clase.
-Indexación con FAISS IndexFlatIP.
+Indexación con FAISS IndexFlatIP sobre el banco balanceado
+($5\,000 \times 32 = 160\,000$ valores almacenados).
 
 \subsection{Resultados del ablation study}
 
 \begin{table}[H]
 \centering
-\caption{Comparativa de los cuatro mecanismos de routing sobre los mismos embeddings ViT-Tiny (192-d). La columna \textit{Params} refiere a los parámetros de la cabeza de routing; el backbone ViT-Tiny (5.7M) es compartido y congelado.}
+\caption{Comparativa de los cuatro mecanismos de routing sobre los mismos embeddings ViT-Tiny (192-d), evaluados en dos regímenes: \textit{bal} (val balanceado, 200 por clase) y \textit{full} (val natural, $N=21\,747$). \textit{Params} refiere a la cabeza de routing; el backbone ViT-Tiny (5.7M) es compartido y congelado.}
 \label{tab:ablation}
 \small
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{llccccc}
+\begin{tabular}{llcccccc}
 \toprule
-\textbf{Router} & \textbf{Tipo} & \textbf{Routing Acc.} & \textbf{Latencia} & \textbf{Params} & \textbf{Memoria} & \textbf{GPU} \\
+\textbf{Router} & \textbf{Tipo} & \textbf{Acc. bal} & \textbf{Acc. full} & \textbf{Latencia} & \textbf{Params} & \textbf{Memoria} & \textbf{GPU} \\
 \midrule
-A — ViT + Linear  & DL (gradiente)     & \textbf{99.90\%} & 0.000 ms & 965     & $\sim$4 KB   & Sí \\
-D — k-NN + PCA    & No paramétrico     & 99.31\%          & 1.720 ms & 3.9 M$^\ddagger$ & $\sim$16 MB  & No \\
-C — Naive Bayes   & Paramétrico (MLE)  & 91.14\%          & 0.004 ms & 1\,925  & $\sim$8 KB   & No \\
-B — GMM           & Paramétrico (EM)   & 90.15\%          & 0.000 ms & 1\,925  & $\sim$8 KB   & No \\
+A — ViT + Linear  & DL (gradiente)     & \textbf{99.60\%} & \textbf{98.27\%} & 0.000 ms & 965       & $\sim$4 KB  & Sí \\
+D — k-NN + PCA    & No paramétrico     & 99.20\%          & 97.11\%          & 1.447 ms & 160\,000$^\ddagger$ & $\sim$0.6 MB & No \\
+B — GMM           & Paramétrico (EM)   & 95.80\%          & 87.35\%          & 0.004 ms & 1\,920    & $\sim$8 KB  & No \\
+C — Naive Bayes   & Paramétrico (MLE)  & 95.80\%          & 87.34\%          & 0.002 ms & 1\,920    & $\sim$8 KB  & No \\
 \midrule
-\multicolumn{5}{l}{\textit{Meta del proyecto}: Routing Acc. $> 80\%$} & \multicolumn{2}{c}{✓ todos} \\
+\multicolumn{6}{l}{\textit{Meta del proyecto}: Routing Acc. $> 80\%$} & \multicolumn{2}{c}{✓ todos} \\
 \bottomrule
-\multicolumn{7}{l}{\footnotesize $^\ddagger$ k-NN almacena $N_\text{train}\!\times\!32$ embeddings reducidos por PCA como ``modelo''.} \\
+\multicolumn{8}{l}{\footnotesize $^\ddagger$ k-NN almacena $5\,000\!\times\!32$ valores (banco balanceado reducido por PCA).} \\
 \end{tabular}
 \end{table}
 
 \subsection{Discusión}
 
-El Router A (ViT + Linear) obtiene la mayor Routing Accuracy (99.90\%),
-confirmando la hipótesis natural de que el método con gradiente aprovecha
-mejor la estructura del espacio de embeddings. Sin embargo, el resultado más
-relevante es que \textbf{los cuatro mecanismos superan ampliamente la meta
-de 80\%}, lo que responde la pregunta científica central: el backbone
-ViT-Tiny genera representaciones suficientemente discriminativas para que
-incluso métodos estadísticos simples logren enrutamiento casi perfecto.
+El Router A (ViT + Linear) obtiene la mayor Routing Accuracy en ambos
+regímenes (99.60\% bal / 98.27\% full), confirmando la hipótesis natural
+de que el método con gradiente aprovecha mejor la estructura del espacio
+de embeddings. Sin embargo, el resultado más relevante es que
+\textbf{los cuatro mecanismos superan ampliamente la meta de 80\%} tanto
+en val balanceado como en val completo, lo que responde la pregunta
+científica central: el backbone ViT-Tiny genera representaciones
+suficientemente discriminativas para que incluso métodos estadísticos
+simples logren enrutamiento casi perfecto.
 
-El Router D (k-NN, 99.31\%) es sorprendentemente competitivo con solo
-1.72 ms de latencia adicional — el costo de la búsqueda sobre $N_{\text{train}}\!=\!121\,287$
-embeddings reducidos por PCA. El Router C (Naive Bayes, 91.14\%) con latencia
-de 0.004 ms representa el extremo de eficiencia: sin
-GPU, sin parámetros entrenables y con ajuste analítico, logra superar el
-umbral con margen. Esta convergencia sugiere que la dificultad del problema
-de routing, una vez obtenido un buen embedding, es baja — la separabilidad
-entre modalidades es inherente a la representación ViT.
+El Router D (k-NN, 99.20\% bal / 97.11\% full) es sorprendentemente
+competitivo a costa de 1.45 ms adicionales de latencia por búsqueda. Los
+Routers B y C (GMM y Naive Bayes, ambos $\approx$95.8\% bal) son
+prácticamente indistinguibles bajo evaluación balanceada; la brecha de
+$\sim$8 pp que aparece en val completo (87.35\%) refleja únicamente que
+estos métodos no modelan bien la asimetría natural del dataset y se
+apoyan más en la modalidad mayoritaria.
+
+\textbf{Por qué reportar las dos métricas.} El régimen balanceado evalúa
+la \textit{capacidad discriminativa} del mecanismo (qué tan bien separa
+las 5 modalidades cuando se le presentan en igual proporción); el régimen
+completo refleja el \textit{comportamiento operativo} bajo la distribución
+real de producción. La distancia entre ambos valores es un diagnóstico
+útil: el Router A mantiene margen (99.6 vs 98.3) porque aprende fronteras,
+mientras que GMM y NB muestran una caída de $\sim$8 pp porque dependen
+de la prior empírica.
 
 \textbf{Hipótesis confirmada parcialmente.} La hipótesis natural —
 \textit{``el ViT justifica su costo como router frente a métodos
-estadísticos''}— queda confirmada en precisión (Router A gana), pero
-\textbf{matizada}: la diferencia con k-NN es de apenas 0.59 pp y con
-Naive Bayes de $\sim$9 pp. Para sistemas embebidos o inferencia en CPU,
-Naive Bayes ofrece una relación costo/precisión muy favorable. La curva
-de fine-tuning del Router A con $\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$
-se muestra en la siguiente sección (Figura~\ref{fig:training}).
+estadísticos''}— queda confirmada en precisión (Router A gana en ambos
+regímenes), pero \textbf{matizada}: la diferencia con k-NN es de apenas
+0.40 pp en balanceado y 1.16 pp en completo. Para sistemas embebidos o
+inferencia en CPU, k-NN+PCA ofrece una relación costo/precisión muy
+favorable. La curva de fine-tuning del Router A con
+$\mathcal{L}_{\text{task}}+\mathcal{L}_{\text{aux}}$ se muestra en la
+siguiente sección (Figura~\ref{fig:training}).
 
 % ============================================================
 \section{Resultados de Clasificación}
@@ -413,7 +438,7 @@ especialistas Mass/Nodule.}
 La Tabla~\ref{tab:e2e} reporta el F1 end-to-end del MoE completo (ViT
 congelado + Router A fine-tuned + experto seleccionado) por dominio, usando
 la descomposición $F1_{\text{E2E}} \approx \text{RouteAcc}_d \cdot F1_d$
-(válida porque la routing accuracy supera 0.99 en todos los dominios).
+(válida porque la routing accuracy supera 0.98 en todos los dominios).
 
 \begin{table}[H]
 \centering
@@ -477,15 +502,18 @@ del paper Switch Transformer~\cite{fedus2021switch}:
 \end{equation}
 
 donde $f_i$ es la fracción dura y $P_i$ la probabilidad media suave del
-router. Se calibró $\alpha = 0.10$ tras sweep sobre $\{0.01, 0.05, 0.10\}$.
+router. Se calibró $\alpha = 0.20$ tras sweep sobre $\{0.05, 0.10, 0.20\}$:
+valores menores subutilizaban la señal de balance en presencia de
+desbalance natural fuerte y permitían ratios $> 1.30$ transitorios.
 
 \textbf{Fine-tuning global (EPIC 3).} La integración final congela ViT y
 expertos, re-entrenando sólo el Router A (965 params) con $\mathcal{L}_{\text{task}}
-+ \mathcal{L}_{\text{aux}}$ sobre embeddings pre-computados, balanceados al
-mínimo del dataset (711 muestras por experto; AdamW $\text{lr}=10^{-4}$,
-weight decay $10^{-4}$, 20 épocas, batch 256). El ratio de carga se midió
-sobre el conjunto balanceado completo al final de cada época para eliminar
-varianza de muestreo por mini-batch.
++ \mathcal{L}_{\text{aux}}$ sobre embeddings pre-computados, estratificados
+por experto (1\,000 muestras por clase en train, 200 en val; AdamW
+$\text{lr}=10^{-4}$, weight decay $10^{-4}$, 20 épocas, batch 256,
+selección de checkpoint por acc balanceada con desempate por ratio). El
+ratio de carga se midió sobre el conjunto balanceado completo al final de
+cada época para eliminar varianza de muestreo por mini-batch.
 
 \begin{figure}[H]
 \centering
@@ -499,11 +527,12 @@ exigido por la rúbrica.}
 \label{fig:balance}
 \end{figure}
 
-Convergencia final: $\mathcal{L}_{\text{task}}=0.004$, \textbf{Routing Accuracy
-= 99.41\%} (val), ratio $\max/\min = \mathbf{1.003}$ sobre el conjunto balanceado
-— prácticamente el óptimo teórico, sin colapso y con amplio margen respecto
-al umbral de 1.30. La distribución en val respeta la prevalencia natural de
-cada modalidad: NIH 76.8\%, ISIC 17.4\%, OA 4.9\%, LUNA16 0.8\%.
+Convergencia final: \textbf{Routing Accuracy = 99.60\%} (val balanceado)
+$/$ \textbf{98.27\%} (val natural), ratio $\max/\min = \mathbf{1.18}$
+sobre el conjunto balanceado — sin colapso y con margen respecto al
+umbral de 1.30 exigido por la rúbrica. La distribución en val respeta la
+prevalencia natural de cada modalidad: NIH 76.8\%, ISIC 17.4\%, OA 4.9\%,
+LUNA16 0.8\%.
 
 \textbf{Detección OOD y Experto 5.} La confianza del router (AUROC 0.9845,
 §4) sirve como detector OOD sin entrenamiento adicional. Los embeddings de
@@ -542,20 +571,24 @@ Este trabajo demuestra que es posible construir un sistema de clasificación
 médica multimodal basado en MoE que procese imágenes 2D y volúmenes CT 3D
 sin recibir información de modalidad como entrada. La pregunta científica
 central queda respondida con datos: \textbf{el Vision Transformer justifica
-su costo computacional como router}, obteniendo 99.90\% de Routing Accuracy,
-pero la diferencia con el método estadístico más simple (Naive Bayes, 91.14\%)
-es de solo $\sim$9 puntos porcentuales. En contextos con restricciones severas
-de hardware, el Naive Bayes sobre embeddings ViT-Tiny preentrenados constituye
-una alternativa viable con latencia de 0.004 ms y sin requerir GPU.
+su costo computacional como router}, obteniendo 99.60\% de Routing Accuracy
+balanceada (98.27\% sobre val completo), pero la diferencia con k-NN+PCA
+(99.20\% bal / 97.11\% full) es de apenas 0.4--1.2 pp y con métodos
+paramétricos simples (GMM, Naive Bayes, 95.80\% bal) es de menos de 4 pp
+bajo evaluación balanceada. En contextos con restricciones severas de
+hardware, Naive Bayes sobre embeddings ViT-Tiny preentrenados constituye
+una alternativa viable con latencia de 0.002 ms y sin requerir GPU.
 
 La lección principal es que la calidad del embedding importa más que la
 complejidad del mecanismo de routing: un ViT bien preentrenado produce
-representaciones donde incluso Naive Bayes alcanza $>91$\% de routing accuracy.
+representaciones donde incluso Naive Bayes supera el 95\% de routing
+accuracy en condiciones balanceadas.
 
-La integración final del MoE (ViT frozen + Router A fine-tuned + 5 expertos)
-alcanza 99.41\% de Routing Accuracy y $\mathbf{F1_{\text{macro}} = 0.7030}$
-end-to-end, con balance de carga prácticamente óptimo (ratio $=$ 1.003,
-evitando la penalización de $-40\%$ por Expert Collapse). El Experto 1 migró de
+La integración final del MoE (ViT frozen + Router A fine-tuned con
+$\alpha=0.2$ + 5 expertos) alcanza 99.60\% de Routing Accuracy balanceada
+y $\mathbf{F1_{\text{macro}} = 0.7030}$ end-to-end, con balance de carga
+dentro del umbral exigido (ratio $=$ 1.18 $<$ 1.30, evitando la
+penalización de $-40\%$ por Expert Collapse). El Experto 1 migró de
 DenseNet-121 monolítico (F1=0.327) a ConvNeXt-Tiny con especialistas
 Mass/Nodule y umbral re-tunado (F1=0.5765) — un salto de +25 pt que valida
 la estrategia \textit{per-class specialist} frente al enfoque multi-label

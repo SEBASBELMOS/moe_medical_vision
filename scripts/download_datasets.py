@@ -2,6 +2,9 @@
 import os, sys, subprocess, requests, zipfile, tarfile
 from pathlib import Path
 RAW_DIR = Path("/workspace/moe_medical_vision/data/raw")
+os.environ.setdefault("KAGGLE_USERNAME", "alej0909")
+os.environ.setdefault("KAGGLE_KEY", "KGAT_55c43d8a96170bc499971e7337c36a50")
+os.environ.setdefault("HF_TOKEN", "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")
 
 def get_folder_size(folder):
     total = 0
@@ -20,9 +23,6 @@ def count_files(folder):
 
 def download_kaggle(slug, dest):
     print(f"[KAGGLE] {slug}")
-    if not os.environ.get("KAGGLE_USERNAME") or not os.environ.get("KAGGLE_KEY"):
-        print("  FALLO: define KAGGLE_USERNAME y KAGGLE_KEY en el entorno")
-        return False
     try:
         d = RAW_DIR / dest
         d.mkdir(parents=True, exist_ok=True)
@@ -61,9 +61,6 @@ def download_zenodo(rid, dest):
 
 def setup_hf():
     print("[HUGGINGFACE]")
-    if not os.environ.get("HF_TOKEN"):
-        print("  FALLO: define HF_TOKEN en el entorno")
-        return False
     try:
         from huggingface_hub import HfApi
         url = HfApi().create_repo(name="moe-medical-vision-raw", repo_type="dataset", private=True, exist_ok=True)

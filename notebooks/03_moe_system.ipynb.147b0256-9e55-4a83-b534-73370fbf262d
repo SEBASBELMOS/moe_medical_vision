@@ -32,7 +32,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 1,
+   "execution_count": 148,
    "id": "f5130206",
    "metadata": {},
    "outputs": [
@@ -84,7 +84,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 2,
+   "execution_count": 149,
    "id": "49649803",
    "metadata": {},
    "outputs": [
@@ -176,7 +176,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 3,
+   "execution_count": 150,
    "id": "602dfc87",
    "metadata": {},
    "outputs": [
@@ -294,7 +294,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 4,
+   "execution_count": 151,
    "id": "0d18d007",
    "metadata": {},
    "outputs": [
@@ -357,7 +357,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 5,
+   "execution_count": 152,
    "id": "95208c3c",
    "metadata": {},
    "outputs": [
@@ -496,7 +496,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 6,
+   "execution_count": 153,
    "id": "7f201f4b",
    "metadata": {},
    "outputs": [
@@ -551,7 +551,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 7,
+   "execution_count": 154,
    "id": "b04e62e3",
    "metadata": {},
    "outputs": [
@@ -604,7 +604,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 8,
+   "execution_count": 155,
    "id": "7706bedb",
    "metadata": {},
    "outputs": [
@@ -643,7 +643,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 9,
+   "execution_count": 156,
    "id": "49bb1cae",
    "metadata": {},
    "outputs": [
@@ -684,7 +684,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 10,
+   "execution_count": 157,
    "id": "28dc9f79",
    "metadata": {},
    "outputs": [
@@ -807,7 +807,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 11,
+   "execution_count": 158,
    "id": "211de922",
    "metadata": {},
    "outputs": [
@@ -857,7 +857,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 12,
+   "execution_count": 159,
    "id": "5ebb5e97",
    "metadata": {},
    "outputs": [
@@ -929,7 +929,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 13,
+   "execution_count": 160,
    "id": "34b1efd4",
    "metadata": {},
    "outputs": [
@@ -993,7 +993,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 14,
+   "execution_count": 161,
    "id": "17eae866",
    "metadata": {},
    "outputs": [
@@ -1071,7 +1071,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 15,
+   "execution_count": 162,
    "id": "23a4a8fe",
    "metadata": {},
    "outputs": [
@@ -1124,161 +1124,10 @@
   {
    "cell_type": "code",
    "execution_count": null,
-   "id": "393115ee-2d14-4df8-900f-4215c79aef1f",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 16,
    "id": "6f859d40",
    "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "[OK]  NIH     /workspace/moe_medical_vision/data/raw/nih/images_007/images/00013993_116.png\n",
-      "[OK]  ISIC    /workspace/moe_medical_vision/data/raw/isic/ISIC_2019_Training_Input/ISIC_2019_Training_Input/ISIC_0054730.jpg\n",
-      "[OK]  OA      /workspace/moe_medical_vision/data/raw/osteoporosis/KLGrade/KLGrade/1/DoubtfulG1 (67).png\n",
-      "[SKIP] LUNA16: no se encontraron imágenes válidas en [PosixPath('/workspace/moe_medical_vision/data/processed/luna16_highres'), PosixPath('/workspace/moe_medical_vision/data/raw/luna16')]\n",
-      "\n",
-      "[OK] Fig 5 -> /workspace/moe_medical_vision/checkpoints/figures/fig5_attention_heatmaps.pdf\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Task 3.7 — Fig 5: Heatmap de atención del ViT (attention rollout, Abnar & Zuidema 2020)\n",
-    "from PIL import Image\n",
-    "from torchvision import transforms as T\n",
-    "import torch.nn.functional as Fn\n",
-    "\n",
-    "# ─── Rutas oficiales (src/config.py) ────────────────────────────────────────\n",
-    "DATA_RAW  = Path('/workspace/moe_medical_vision/data/raw')\n",
-    "DATA_PROC = Path('/workspace/moe_medical_vision/data/processed')\n",
-    "DATA_ROOTS = {\n",
-    "    'NIH':    [DATA_RAW / 'nih'],\n",
-    "    'ISIC':   [DATA_RAW / 'isic'],\n",
-    "    'OA':     [DATA_RAW / 'osteoporosis' / 'KLGrade' / 'KLGrade'],\n",
-    "    # Para LUNA16 preferimos MIPs procesadas; evitar dirs de docs/scripts.\n",
-    "    'LUNA16': [DATA_PROC / 'luna16_highres', DATA_RAW / 'luna16'],\n",
-    "}\n",
-    "\n",
-    "# Subcadenas a excluir al buscar imágenes (scripts, docs, evaluación suelta, cachés)\n",
-    "EXCLUDE_SUBSTR = ('evaluationScript', 'evaluation_script', 'docs', 'scripts',\n",
-    "                  'README', 'FROC', '__pycache__', 'sample')\n",
-    "\n",
-    "def _find_img(cands):\n",
-    "    for root in cands:\n",
-    "        if not root.exists():\n",
-    "            continue\n",
-    "        for ext in ('*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG'):\n",
-    "            hits = [p for p in sorted(root.rglob(ext))\n",
-    "                    if not any(s.lower() in str(p).lower() for s in EXCLUDE_SUBSTR)]\n",
-    "            if hits:\n",
-    "                return hits[len(hits) // 2]\n",
-    "    return None\n",
-    "\n",
-    "samples = {n: p for n, p in ((k, _find_img(v)) for k, v in DATA_ROOTS.items()) if p is not None}\n",
-    "for n, p in samples.items():\n",
-    "    print(f'[OK]  {n:<7s} {p}')\n",
-    "for n in set(DATA_ROOTS) - set(samples):\n",
-    "    print(f'[SKIP] {n}: no se encontraron imágenes válidas en {DATA_ROOTS[n]}')\n",
-    "\n",
-    "if not samples:\n",
-    "    raise RuntimeError('Sin imágenes para heatmap. Edita DATA_ROOTS y re-ejecuta.')\n",
-    "\n",
-    "# ─── Monkey-patch de Attention (acepta attn_mask, is_causal de timm >=1.x) ──\n",
-    "from timm.models.vision_transformer import Attention as _TimmAttn\n",
-    "_orig_attn_fwd = _TimmAttn.forward\n",
-    "\n",
-    "def _save_attn_fwd(self, x, attn_mask=None, is_causal=False):\n",
-    "    B, N, C = x.shape\n",
-    "    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)\n",
-    "    q, k, v = qkv.unbind(0)\n",
-    "    if hasattr(self, 'q_norm'): q = self.q_norm(q)\n",
-    "    if hasattr(self, 'k_norm'): k = self.k_norm(k)\n",
-    "    attn = (q @ k.transpose(-2, -1)) * self.scale\n",
-    "    if attn_mask is not None:\n",
-    "        attn = attn + attn_mask\n",
-    "    attn = attn.softmax(dim=-1)\n",
-    "    self._saved_attn = attn.detach()\n",
-    "    attn = self.attn_drop(attn)\n",
-    "    out = (attn @ v).transpose(1, 2).reshape(B, N, C)\n",
-    "    return self.proj_drop(self.proj(out))\n",
-    "\n",
-    "_TimmAttn.forward = _save_attn_fwd\n",
-    "\n",
-    "tfm = T.Compose([\n",
-    "    T.Resize((224, 224)),\n",
-    "    T.ToTensor(),\n",
-    "    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),\n",
-    "])\n",
-    "\n",
-    "def attention_rollout(attn_list):\n",
-    "    \"\"\"Producto acumulativo con residual (Abnar & Zuidema 2020).\"\"\"\n",
-    "    result = None\n",
-    "    for A in attn_list:\n",
-    "        A_mean = A.mean(dim=1)\n",
-    "        I = torch.eye(A_mean.size(-1), device=A_mean.device).unsqueeze(0)\n",
-    "        A_res = A_mean + I\n",
-    "        A_res = A_res / A_res.sum(dim=-1, keepdim=True)\n",
-    "        result = A_res if result is None else torch.bmm(A_res, result)\n",
-    "    return result\n",
-    "\n",
-    "# ─── Generar heatmaps ───────────────────────────────────────────────────────\n",
-    "moe.backbone.eval(); moe.router.eval()\n",
-    "n_samples = len(samples)\n",
-    "fig, axes = plt.subplots(2, n_samples, figsize=(3.2 * n_samples, 6.6))\n",
-    "if n_samples == 1:\n",
-    "    axes = axes.reshape(2, 1)\n",
-    "\n",
-    "try:\n",
-    "    for col, (name, img_path) in enumerate(samples.items()):\n",
-    "        img = Image.open(img_path).convert('RGB')\n",
-    "        x = tfm(img).unsqueeze(0).to(DEVICE)\n",
-    "\n",
-    "        with torch.no_grad():\n",
-    "            feats = moe.backbone.forward_features(x)\n",
-    "            z = feats[:, 0, :]\n",
-    "            probs_r = Fn.softmax(moe.router(z), dim=-1)\n",
-    "            eid = int(probs_r.argmax(-1).item())\n",
-    "            conf = float(probs_r[0, eid].item())\n",
-    "\n",
-    "        attn_list = [blk.attn._saved_attn for blk in moe.backbone.blocks]\n",
-    "        roll = attention_rollout(attn_list)\n",
-    "        cls_attn = roll[0, 0, 1:].reshape(14, 14)\n",
-    "        hmap_up = Fn.interpolate(\n",
-    "            cls_attn[None, None].float(), size=(224, 224),\n",
-    "            mode='bilinear', align_corners=False\n",
-    "        )[0, 0].cpu().numpy()\n",
-    "        lo, hi = np.percentile(hmap_up, [5, 95])\n",
-    "        hmap_up = np.clip((hmap_up - lo) / (hi - lo + 1e-8), 0, 1)\n",
-    "\n",
-    "        img_np = np.array(img.resize((224, 224)))\n",
-    "\n",
-    "        axes[0, col].imshow(img_np)\n",
-    "        axes[0, col].set_title(f'{name}\\nRuta -> {moe.EXPERT_NAMES[eid]} (conf {conf:.2f})', fontsize=9)\n",
-    "        axes[0, col].axis('off')\n",
-    "\n",
-    "        axes[1, col].imshow(img_np)\n",
-    "        axes[1, col].imshow(hmap_up, cmap='jet', alpha=0.5)\n",
-    "        axes[1, col].axis('off')\n",
-    "\n",
-    "    axes[0, 0].text(-0.08, 0.5, 'Imagen',\n",
-    "                    transform=axes[0, 0].transAxes, rotation=90, va='center', fontsize=10)\n",
-    "    axes[1, 0].text(-0.08, 0.5, 'Atencion ViT (rollout)',\n",
-    "                    transform=axes[1, 0].transAxes, rotation=90, va='center', fontsize=10)\n",
-    "\n",
-    "    plt.suptitle('Mapas de atencion del ViT-Tiny con attention rollout', fontsize=11, y=1.00)\n",
-    "    plt.tight_layout()\n",
-    "    fig5_path = FIG_DIR / 'fig5_attention_heatmaps.pdf'\n",
-    "    plt.savefig(fig5_path, bbox_inches='tight', dpi=140); plt.close()\n",
-    "    print(f'\\n[OK] Fig 5 -> {fig5_path}')\n",
-    "finally:\n",
-    "    _TimmAttn.forward = _orig_attn_fwd"
-   ]
+   "outputs": [],
+   "source": "# Task 3.7 — Fig 5: Heatmap de atención del ViT (attention rollout, Abnar & Zuidema 2020)\nfrom PIL import Image\nfrom torchvision import transforms as T\nimport torch.nn.functional as Fn\n\n# ─── Rutas oficiales (src/config.py) ────────────────────────────────────────\nDATA_RAW  = Path('/workspace/moe_medical_vision/data/raw')\nDATA_PROC = Path('/workspace/moe_medical_vision/data/processed')\nDATA_ROOTS = {\n    'NIH':    [DATA_RAW / 'nih'],\n    'ISIC':   [DATA_RAW / 'isic'],\n    'OA':     [DATA_RAW / 'osteoporosis' / 'KLGrade' / 'KLGrade'],\n    # LUNA16: volúmenes 3D pre-procesados (.npz con clave 'volume'); MIP on-the-fly.\n    'LUNA16': [DATA_PROC / 'luna16_highres', DATA_RAW / 'luna16'],\n}\n\n# Subcadenas a excluir al buscar imágenes (scripts, docs, evaluación suelta, cachés)\nEXCLUDE_SUBSTR = ('evaluationScript', 'evaluation_script', 'docs', 'scripts',\n                  'README', 'FROC', '__pycache__', 'sample')\n\ndef _find_img(cands):\n    for root in cands:\n        if not root.exists():\n            continue\n        # val_*.npz primero (split de validación), luego imágenes 2D, luego cualquier .npz\n        for ext in ('val_*.npz', '*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.npz'):\n            hits = [p for p in sorted(root.rglob(ext))\n                    if not any(s.lower() in str(p).lower() for s in EXCLUDE_SUBSTR)]\n            if hits:\n                return hits[len(hits) // 2]\n    return None\n\ndef _load_as_pil(path):\n    \"\"\"Devuelve PIL RGB. Para .npz computa MIP (max intensity projection) del volumen 3D.\"\"\"\n    p = Path(path)\n    if p.suffix.lower() == '.npz':\n        d = np.load(p)\n        key = 'volume' if 'volume' in d.files else ('image' if 'image' in d.files else d.files[0])\n        vol = d[key]\n        while vol.ndim > 3:   # quita canal/batch dims hasta dejar (D,H,W)\n            vol = vol[0]\n        mip = vol.max(axis=0).astype(np.float32)\n        mn, mx = float(mip.min()), float(mip.max())\n        mip = (mip - mn) / max(mx - mn, 1e-6)\n        arr = (mip * 255).clip(0, 255).astype(np.uint8)\n        return Image.fromarray(arr).convert('RGB')\n    return Image.open(p).convert('RGB')\n\nsamples = {n: p for n, p in ((k, _find_img(v)) for k, v in DATA_ROOTS.items()) if p is not None}\nfor n, p in samples.items():\n    print(f'[OK]  {n:<7s} {p}')\nfor n in set(DATA_ROOTS) - set(samples):\n    print(f'[SKIP] {n}: no se encontraron imágenes válidas en {DATA_ROOTS[n]}')\n\nif not samples:\n    raise RuntimeError('Sin imágenes para heatmap. Edita DATA_ROOTS y re-ejecuta.')\n\n# ─── Monkey-patch de Attention (acepta attn_mask, is_causal de timm >=1.x) ──\nfrom timm.models.vision_transformer import Attention as _TimmAttn\n_orig_attn_fwd = _TimmAttn.forward\n\ndef _save_attn_fwd(self, x, attn_mask=None, is_causal=False):\n    B, N, C = x.shape\n    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)\n    q, k, v = qkv.unbind(0)\n    if hasattr(self, 'q_norm'): q = self.q_norm(q)\n    if hasattr(self, 'k_norm'): k = self.k_norm(k)\n    attn = (q @ k.transpose(-2, -1)) * self.scale\n    if attn_mask is not None:\n        attn = attn + attn_mask\n    attn = attn.softmax(dim=-1)\n    self._saved_attn = attn.detach()\n    attn = self.attn_drop(attn)\n    out = (attn @ v).transpose(1, 2).reshape(B, N, C)\n    return self.proj_drop(self.proj(out))\n\n_TimmAttn.forward = _save_attn_fwd\n\ntfm = T.Compose([\n    T.Resize((224, 224)),\n    T.ToTensor(),\n    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),\n])\n\ndef attention_rollout(attn_list):\n    \"\"\"Producto acumulativo con residual (Abnar & Zuidema 2020).\"\"\"\n    result = None\n    for A in attn_list:\n        A_mean = A.mean(dim=1)\n        I = torch.eye(A_mean.size(-1), device=A_mean.device).unsqueeze(0)\n        A_res = A_mean + I\n        A_res = A_res / A_res.sum(dim=-1, keepdim=True)\n        result = A_res if result is None else torch.bmm(A_res, result)\n    return result\n\n# ─── Generar heatmaps ───────────────────────────────────────────────────────\nmoe.backbone.eval(); moe.router.eval()\nn_samples = len(samples)\nfig, axes = plt.subplots(2, n_samples, figsize=(3.2 * n_samples, 6.6))\nif n_samples == 1:\n    axes = axes.reshape(2, 1)\n\ntry:\n    for col, (name, img_path) in enumerate(samples.items()):\n        img = _load_as_pil(img_path)\n        x = tfm(img).unsqueeze(0).to(DEVICE)\n\n        with torch.no_grad():\n            feats = moe.backbone.forward_features(x)\n            z = feats[:, 0, :]\n            probs_r = Fn.softmax(moe.router(z), dim=-1)\n            eid = int(probs_r.argmax(-1).item())\n            conf = float(probs_r[0, eid].item())\n\n        attn_list = [blk.attn._saved_attn for blk in moe.backbone.blocks]\n        roll = attention_rollout(attn_list)\n        cls_attn = roll[0, 0, 1:].reshape(14, 14)\n        hmap_up = Fn.interpolate(\n            cls_attn[None, None].float(), size=(224, 224),\n            mode='bilinear', align_corners=False\n        )[0, 0].cpu().numpy()\n        lo, hi = np.percentile(hmap_up, [5, 95])\n        hmap_up = np.clip((hmap_up - lo) / (hi - lo + 1e-8), 0, 1)\n\n        img_np = np.array(img.resize((224, 224)))\n\n        axes[0, col].imshow(img_np)\n        axes[0, col].set_title(f'{name}\\nRuta -> {moe.EXPERT_NAMES[eid]} (conf {conf:.2f})', fontsize=9)\n        axes[0, col].axis('off')\n\n        axes[1, col].imshow(img_np)\n        axes[1, col].imshow(hmap_up, cmap='jet', alpha=0.5)\n        axes[1, col].axis('off')\n\n    axes[0, 0].text(-0.08, 0.5, 'Imagen',\n                    transform=axes[0, 0].transAxes, rotation=90, va='center', fontsize=10)\n    axes[1, 0].text(-0.08, 0.5, 'Atencion ViT (rollout)',\n                    transform=axes[1, 0].transAxes, rotation=90, va='center', fontsize=10)\n\n    plt.suptitle('Mapas de atencion del ViT-Tiny con attention rollout', fontsize=11, y=1.00)\n    plt.tight_layout()\n    fig5_path = FIG_DIR / 'fig5_attention_heatmaps.pdf'\n    plt.savefig(fig5_path, bbox_inches='tight', dpi=140); plt.close()\n    print(f'\\n[OK] Fig 5 -> {fig5_path}')\nfinally:\n    _TimmAttn.forward = _orig_attn_fwd"
   },
   {
    "cell_type": "markdown",
@@ -1291,7 +1140,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 17,
+   "execution_count": 164,
    "id": "d171909f",
    "metadata": {},
    "outputs": [
@@ -1332,7 +1181,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 18,
+   "execution_count": 165,
    "id": "fb79835b",
    "metadata": {},
    "outputs": [
